@@ -23,5 +23,5 @@ public class Article {
     private Integer numberOfChildren = 0;
 
     private Article parent;
-    private Article children;
+    private Article child;
 }

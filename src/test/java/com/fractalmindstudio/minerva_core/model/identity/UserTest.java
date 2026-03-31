@@ -1,32 +1,61 @@
 package com.fractalmindstudio.minerva_core.model.identity;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.AssertionErrors;
 
-@ExtendWith(MockitoExtension.class)
-public class UserTest {
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class UserTest {
+
+    private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String NAME = "Ada";
+    private static final String LAST_NAME = "Lovelace";
+    private static final String ADDRESS = "42 Analytical Engine Street";
+    private static final String UPDATED_ADDRESS = "84 Analytical Engine Street";
 
     @Test
-    public void emptyUser(){
-        User u = new User();
+    void shouldCreateUserWithDefaultValuesAndGeneratedId() {
+        User user = new User();
 
-        AssertionErrors.assertNull("Name", u.getName());
-        AssertionErrors.assertNull("Last name", u.getLastName());
-        AssertionErrors.assertNull("Address", u.getAddress());
+        assertThat(user.getId()).isNotNull();
+        assertThat(user.getName()).isNull();
+        assertThat(user.getLastName()).isNull();
+        assertThat(user.getAddress()).isNull();
     }
 
     @Test
-    public void gettersAndSettersSameValuesUser(){
-        User u = new User();
+    void shouldStoreAssignedValues() {
+        User user = new User();
 
-        u.setName("name1");
-        u.setLastName("lastname2");
-        u.setAddress("address3");
+        user.setName(NAME);
+        user.setLastName(LAST_NAME);
+        user.setAddress(ADDRESS);
 
-        AssertionErrors.assertEquals("Name", "name1", u.getName());
-        AssertionErrors.assertEquals("Last name", "lastname2", u.getLastName());
-        AssertionErrors.assertEquals("Address", "address3", u.getAddress());
+        assertThat(user.getName()).isEqualTo(NAME);
+        assertThat(user.getLastName()).isEqualTo(LAST_NAME);
+        assertThat(user.getAddress()).isEqualTo(ADDRESS);
+    }
+
+    @Test
+    void shouldImplementEqualsAndHashCodeBasedOnState() {
+        User first = createUser();
+        User second = createUser();
+
+        assertThat(first).isEqualTo(second);
+        assertThat(first).hasSameHashCodeAs(second);
+
+        second.setAddress(UPDATED_ADDRESS);
+
+        assertThat(first).isNotEqualTo(second);
+    }
+
+    private User createUser() {
+        User user = new User();
+        user.setId(USER_ID);
+        user.setName(NAME);
+        user.setLastName(LAST_NAME);
+        user.setAddress(ADDRESS);
+        return user;
     }
 }
