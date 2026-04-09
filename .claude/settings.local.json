@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./mvnw test:*)"
+      "Bash(./mvnw test:*)",
+      "Bash(bash api-tests.sh)",
+      "Bash(curl:*)",
+      "Bash(tail -50 db/data.minerva.db)",
+      "Bash(ls db/)",
+      "Bash(tasklist)"
     ]
   }
 }

@@ -73,7 +73,9 @@ public class SaleController {
                         return SaleLine.createForItem(line.itemId(), line.unitPrice(), line.taxId());
                     }
                     return SaleLine.createForFreeConcept(
-                            line.freeConceptId(), line.quantity(), line.unitPrice(), line.taxId()
+                            line.freeConceptId(),
+                            line.quantity() == null ? 1 : line.quantity(),
+                            line.unitPrice(), line.taxId()
                     );
                 })
                 .toList();
@@ -107,7 +109,7 @@ public class SaleController {
     public record SaleLineRequest(
             UUID itemId,
             UUID freeConceptId,
-            int quantity,
+            Integer quantity,
             @NotNull @DecimalMin("0.0") BigDecimal unitPrice,
             @NotNull UUID taxId
     ) {
