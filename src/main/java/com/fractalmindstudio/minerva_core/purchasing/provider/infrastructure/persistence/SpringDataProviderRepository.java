@@ -1,0 +1,6 @@
+package com.fractalmindstudio.minerva_core.purchasing.provider.infrastructure.persistence;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface SpringDataProviderRepository extends JpaRepository<ProviderEntity, String> {
+}

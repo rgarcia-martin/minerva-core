@@ -1,0 +1,80 @@
+#usuarios
+como administrador quiero registrar un nuevo usuario del sistema (empleado) con sus datos (nombre, apellidos, email, dirección) y una contraseña inicial
+como administrador quiero asignar a cada usuario uno o varios roles (lectura, creación, edición, borrado) que aplican de forma global en todo el sistema
+como administrador quiero consultar los usuarios registrados
+como administrador quiero actualizar los datos y roles de un usuario existente
+como administrador quiero desactivar un usuario para que no pueda acceder al sistema sin perder su histórico de operaciones
+como administrador quiero tener asignados todos los roles y poder actuar en todo el sistema
+como usuario quiero autenticarme con mi email y contraseña para acceder a las funcionalidades según mis roles
+
+#localizaciones
+como usuario con rol de creación quiero registrar una localización nueva (almacén, tienda, estantería) con su nombre y descripción
+como usuario con rol de lectura quiero consultar las localizaciones existentes
+como usuario con rol de edición quiero actualizar una localización existente
+como usuario con rol de borrado quiero eliminar una localización existente
+
+#impuestos
+como administrador quiero registrar un tipo de impuesto con su descripción, porcentaje de IVA y porcentaje de recargo de equivalencia vinculado, respetando el sistema fiscal español: IVA general 21% con recargo 5,2%, IVA reducido 10% con recargo 1,4%, IVA superreducido 4% con recargo 0,5%
+como administrador quiero consultar los impuestos configurados
+como administrador quiero actualizar un impuesto existente
+como administrador quiero eliminar un impuesto existente
+
+#articulos
+como usuario con rol de creación quiero registrar un artículo nuevo con su nombre, código interno, código de barras, imagen, descripción, impuesto aplicable, precio base de compra y precio de venta al público
+como usuario con rol de creación quiero indicar si un artículo es un paquete que contiene unidades individuales vendibles por separado, especificando el número de unidades que contiene y el artículo hijo que representa cada unidad
+como usuario con rol de lectura quiero consultar los artículos existentes
+como usuario con rol de edición quiero actualizar un artículo existente
+como usuario con rol de borrado quiero eliminar un artículo existente
+
+#proveedores
+como usuario con rol de creación quiero registrar un proveedor nuevo con sus datos (nombre o razón social, CIF/NIF, dirección, teléfono, email), indicando si aplica recargo de equivalencia en sus facturas
+como usuario con rol de lectura quiero consultar los proveedores existentes
+como usuario con rol de edición quiero actualizar un proveedor existente, incluida la marca de recargo de equivalencia
+como usuario con rol de borrado quiero eliminar un proveedor existente
+
+#albaranes de compra
+como empleado quiero registrar un nuevo albarán de compra indicando el proveedor, el código que aparece en el documento en papel y si se trata de una compra regular o de un depósito
+como empleado quiero añadir líneas al albarán especificando por cada línea: el artículo, la cantidad de unidades, el precio base de compra, el margen de beneficio (porcentaje sobre el precio base) y el impuesto aplicable
+como empleado quiero indicar la localización destino donde se almacenarán las existencias generadas por el albarán
+como empleado, si el albarán es en depósito, quiero indicar la fecha de vencimiento para saber cuándo debo devolver al proveedor las existencias no vendidas
+como empleado quiero consultar los albaranes registrados, pudiendo filtrar por proveedor, fecha o estado
+como empleado quiero consultar el detalle de un albarán con sus líneas, importes desglosados (base, IVA, recargo de equivalencia si aplica) y las existencias que ha generado
+como empleado quiero marcar un albarán como pagado una vez abonada la factura al proveedor
+como empleado, para albaranes en depósito, quiero poder registrar la devolución de las existencias no vendidas una vez alcanzada la fecha de vencimiento
+como sistema quiero calcular automáticamente el precio de venta de cada línea a partir del precio base y el margen de beneficio
+como sistema, si el proveedor del albarán aplica recargo de equivalencia, quiero aplicar automáticamente el porcentaje de recargo correspondiente al tipo de IVA de cada línea, desglosándolo de forma independiente en los importes del albarán
+como sistema quiero calcular automáticamente el importe total del albarán a partir de la suma de sus líneas (base + IVA + recargo si aplica)
+como sistema, al confirmar un albarán, necesito generar automáticamente una existencia (ítem) por cada unidad indicada en cada línea, asignando a cada ítem el coste de compra, el impuesto, el proveedor de origen y la localización destino
+como sistema, al generar existencias de un artículo que es un paquete (por ejemplo, una caja de bolígrafos que se vende por unidades), necesito crear el ítem contenedor en estado ABIERTO y generar sus ítems hijos en estado DISPONIBLE para que puedan venderse individualmente
+
+#métodos de pago
+como administrador quiero configurar los métodos de pago disponibles en el sistema (efectivo, tarjeta asociada a una cuenta bancaria, pasarela de pago) indicando los datos de configuración necesarios para cada uno
+como administrador quiero consultar los métodos de pago configurados
+como administrador quiero actualizar un método de pago existente
+como administrador quiero eliminar un método de pago existente
+
+#conceptos libres
+como administrador quiero dar de alta conceptos libres que representan servicios o productos sin vinculación a inventario (por ejemplo: bolsas de plástico, fotocopias en blanco y negro, fotocopias a color, servicio de mesa), configurando su nombre, código de barras, precio, impuesto aplicable y descripción
+como administrador quiero consultar los conceptos libres configurados
+como administrador quiero actualizar un concepto libre existente
+como administrador quiero eliminar un concepto libre existente
+
+#clientes
+como usuario con rol de creación quiero registrar un nuevo cliente con sus datos personales (nombre, apellidos, email, teléfono, DNI/NIF)
+como usuario con rol de lectura quiero consultar los clientes registrados
+como usuario con rol de edición quiero actualizar los datos de un cliente existente
+como usuario con rol de borrado quiero eliminar un cliente existente
+
+#ventas
+como empleado quiero registrar una nueva venta con un identificador único, seleccionando los artículos y las cantidades que el cliente desea comprar
+como empleado quiero añadir a una venta conceptos libres indicando la cantidad deseada
+como empleado quiero asociar opcionalmente un cliente a la venta (si no se asocia, se considera venta a público general)
+como empleado quiero seleccionar el método de pago utilizado por el cliente
+como empleado quiero consultar las ventas registradas, pudiendo filtrar por fecha, cliente o empleado
+como empleado quiero consultar el detalle de una venta con todas sus líneas (artículos, conceptos libres), desglose de importes (base, IVA) y método de pago
+como empleado quiero poder anular una venta, devolviendo las existencias asignadas a estado DISPONIBLE
+como sistema, al confirmar una venta, quiero verificar que existen suficientes existencias disponibles de cada artículo solicitado antes de proceder
+como sistema, al confirmar una venta, quiero asignar automáticamente las existencias concretas del inventario a cada artículo vendido, priorizando aquellas cuyo proveedor ofrece mayor margen de beneficio, pudiendo aplicar técnicas de optimización (simplex, IA u heurísticas de prioridad por margen)
+como sistema, al confirmar una venta, quiero marcar las existencias asignadas como VENDIDAS para que dejen de estar disponibles
+como sistema quiero generar un ticket de venta asociado a la venta para entregar al cliente, incluyendo el desglose de artículos, cantidades, precios unitarios, impuestos y el total
+como sistema, en un futuro, quiero poder generar una factura a partir de una venta registrada
