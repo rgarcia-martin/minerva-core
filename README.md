@@ -2,6 +2,54 @@
 
 This project was refactored to a DDD-oriented Spring Boot REST API.
 
+## Prerequisites (Windows)
+
+### 1. Install JDK 26
+
+1. Download the JDK 26 installer from [Oracle JDK Downloads](https://www.oracle.com/java/technologies/downloads/) or [Adoptium](https://adoptium.net/).
+2. Run the installer and note the installation path (e.g. `C:\Program Files\Java\jdk-26`).
+3. Set the `JAVA_HOME` environment variable:
+   - Open **Settings > System > About > Advanced system settings > Environment Variables**.
+   - Under **System variables**, click **New**:
+     - Variable name: `JAVA_HOME`
+     - Variable value: `C:\Program Files\Java\jdk-26`
+   - Find the `Path` variable under **System variables**, click **Edit**, and add a new entry: `%JAVA_HOME%\bin`
+4. Verify in a new terminal:
+   ```cmd
+   java --version
+   ```
+
+### 2. Install Apache Maven
+
+1. Download the binary zip from [Maven Downloads](https://maven.apache.org/download.cgi) (e.g. `apache-maven-3.9.9-bin.zip`).
+2. Extract to a permanent location (e.g. `C:\tools\apache-maven-3.9.9`).
+3. Set environment variables:
+   - Under **System variables**, click **New**:
+     - Variable name: `MAVEN_HOME`
+     - Variable value: `C:\tools\apache-maven-3.9.9`
+   - Edit the `Path` variable and add a new entry: `%MAVEN_HOME%\bin`
+4. Verify in a new terminal:
+   ```cmd
+   mvn -version
+   ```
+   The output should show the Maven version and the JDK 26 path from `JAVA_HOME`.
+
+> **Note:** This project includes the Maven Wrapper (`mvnw` / `mvnw.cmd`), so a system-wide Maven install is optional. You can run `.\mvnw.cmd` instead of `mvn` and it will download the correct Maven version automatically.
+
+### 3. Install IntelliJ IDEA Community Edition
+
+1. Download the installer from [JetBrains IntelliJ IDEA](https://www.jetbrains.com/idea/download/) (select **Community Edition**).
+2. Run the installer. Recommended options during setup:
+   - Add `idea` to the PATH.
+   - Associate `.java` files with IntelliJ.
+   - Create a desktop shortcut.
+3. Open IntelliJ and configure the JDK:
+   - Go to **File > Project Structure > SDKs**, click **+**, and add the JDK 26 installation path.
+   - Under **File > Project Structure > Project**, set the **SDK** to JDK 26 and **Language level** to 26.
+4. Open the project:
+   - **File > Open** and select the `minerva-core` folder.
+   - IntelliJ will detect the `pom.xml` and import as a Maven project automatically.
+
 ## Architecture
 
 The codebase is organized by bounded context and layers:
