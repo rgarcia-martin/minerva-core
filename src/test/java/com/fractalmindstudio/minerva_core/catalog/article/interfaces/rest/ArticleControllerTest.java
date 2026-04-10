@@ -1,0 +1,268 @@
+package com.fractalmindstudio.minerva_core.catalog.article.interfaces.rest;
+
+import com.fractalmindstudio.minerva_core.catalog.article.application.ArticleService;
+import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
+import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
+import com.fractalmindstudio.minerva_core.shared.interfaces.rest.ApiExceptionHandler;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@ExtendWith(MockitoExtension.class)
+class ArticleControllerTest {
+
+    private static final String BASE_PATH = ArticleController.BASE_PATH;
+    private static final UUID TAX_ID = UUID.randomUUID();
+
+    private MockMvc mockMvc;
+
+    @Mock
+    private ArticleService articleService;
+
+    @InjectMocks
+    private ArticleController articleController;
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(articleController)
+                .setControllerAdvice(new ApiExceptionHandler())
+                .build();
+    }
+
+    private String validArticleJson() {
+        return """
+                {
+                    "name": "Widget",
+                    "code": "WDG-001",
+                    "barcode": "1234567890",
+                    "image": null,
+                    "description": "A widget",
+                    "taxId": "%s",
+                    "basePrice": 10.00,
+                    "retailPrice": 15.00,
+                    "canHaveChildren": false,
+                    "numberOfChildren": 0,
+                    "parentArticleId": null
+                }
+                """.formatted(TAX_ID);
+    }
+
+    @Test
+    void shouldCreateArticle() throws Exception {
+        final var article = Article.create(
+                "Widget", "WDG-001", "1234567890", null, "A widget",
+                TAX_ID, new BigDecimal("10"), new BigDecimal("15"), false, 0, null
+        );
+        when(articleService.create(
+                eq("Widget"), eq("WDG-001"), eq("1234567890"), isNull(), eq("A widget"),
+                eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
+                eq(false), eq(0), isNull()
+        )).thenReturn(article);
+
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validArticleJson()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(article.id().toString()))
+                .andExpect(jsonPath("$.name").value("Widget"))
+                .andExpect(jsonPath("$.code").value("WDG-001"));
+    }
+
+    @Test
+    void shouldFindAllArticles() throws Exception {
+        final var articles = List.of(
+                Article.create("A", "A-1", "111", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null)
+        );
+        when(articleService.findAll()).thenReturn(articles);
+
+        mockMvc.perform(get(BASE_PATH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    void shouldGetArticleById() throws Exception {
+        final var article = Article.create("Widget", "WDG-001", "123", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        when(articleService.getById(article.id())).thenReturn(article);
+
+        mockMvc.perform(get(BASE_PATH + "/{id}", article.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Widget"));
+    }
+
+    @Test
+    void shouldUpdateArticle() throws Exception {
+        final var id = UUID.randomUUID();
+        final var updated = new Article(id, "Updated", "UPD-001", "999", null, "Updated desc",
+                TAX_ID, new BigDecimal("20"), new BigDecimal("30"), false, 0, null);
+        when(articleService.update(
+                eq(id), eq("Updated"), eq("UPD-001"), eq("999"), isNull(), eq("Updated desc"),
+                eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
+                eq(false), eq(0), isNull()
+        )).thenReturn(updated);
+
+        mockMvc.perform(put(BASE_PATH + "/{id}", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "name": "Updated", "code": "UPD-001", "barcode": "999",
+                                    "description": "Updated desc", "taxId": "%s",
+                                    "basePrice": 20, "retailPrice": 30
+                                }
+                                """.formatted(TAX_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated"));
+    }
+
+    @Test
+    void shouldDeleteArticle() throws Exception {
+        final var id = UUID.randomUUID();
+        doNothing().when(articleService).delete(id);
+
+        mockMvc.perform(delete(BASE_PATH + "/{id}", id))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void shouldReturn404WhenArticleNotFound() throws Exception {
+        final var id = UUID.randomUUID();
+        when(articleService.getById(id)).thenThrow(new NotFoundException("article", id));
+
+        mockMvc.perform(get(BASE_PATH + "/{id}", id))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.message").value("article with id " + id + " was not found"));
+    }
+
+    @Test
+    void shouldReturn400WhenNameIsBlank() throws Exception {
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "name": "", "code": "WDG-001", "barcode": "123",
+                                    "taxId": "%s", "basePrice": 10, "retailPrice": 15
+                                }
+                                """.formatted(TAX_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void shouldReturn400WhenCodeIsMissing() throws Exception {
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "name": "Widget", "barcode": "123",
+                                    "taxId": "%s", "basePrice": 10, "retailPrice": 15
+                                }
+                                """.formatted(TAX_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void shouldReturn400WhenTaxIdIsMissing() throws Exception {
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "name": "Widget", "code": "WDG", "barcode": "123",
+                                    "basePrice": 10, "retailPrice": 15
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void shouldReturn400WhenBasePriceIsNegative() throws Exception {
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "name": "Widget", "code": "WDG", "barcode": "123",
+                                    "taxId": "%s", "basePrice": -1, "retailPrice": 15
+                                }
+                                """.formatted(TAX_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void shouldReturn400WhenBodyIsNotReadable() throws Exception {
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("broken"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void shouldReturn400WhenPathVariableIsInvalidUuid() throws Exception {
+        mockMvc.perform(get(BASE_PATH + "/{id}", "bad-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void shouldReturn415WhenMediaTypeIsUnsupported() throws Exception {
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("text"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.status").value(415));
+    }
+
+    @Test
+    void shouldReturn400WhenServiceThrowsIllegalArgument() throws Exception {
+        when(articleService.create(
+                eq("Widget"), eq("WDG-001"), eq("1234567890"), isNull(), eq("A widget"),
+                eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
+                eq(false), eq(0), isNull()
+        )).thenThrow(new IllegalArgumentException("invalid article data"));
+
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validArticleJson()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("invalid article data"));
+    }
+
+    @Test
+    void shouldReturn500WhenUnexpectedErrorOccurs() throws Exception {
+        when(articleService.findAll()).thenThrow(new RuntimeException("unexpected"));
+
+        mockMvc.perform(get(BASE_PATH))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.message").value("Unexpected application error"));
+    }
+}

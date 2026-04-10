@@ -6,7 +6,9 @@
       "Bash(curl:*)",
       "Bash(tail -50 db/data.minerva.db)",
       "Bash(ls db/)",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(./mvnw dependency:tree -Dscope=test)",
+      "Bash(jar tf:*)"
     ]
   }
 }
