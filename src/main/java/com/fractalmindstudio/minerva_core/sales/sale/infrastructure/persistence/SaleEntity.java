@@ -1,5 +1,6 @@
 package com.fractalmindstudio.minerva_core.sales.sale.infrastructure.persistence;
 
+import com.fractalmindstudio.minerva_core.identity.user.infrastructure.persistence.UserEntity;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.SaleState;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -9,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
@@ -33,8 +35,9 @@ public class SaleEntity {
     @Column(nullable = false, unique = true)
     private String code;
 
-    @Column(nullable = false, length = 36)
-    private String employeeId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_id", referencedColumnName = "id", nullable = false)
+    private UserEntity employee;
 
     @Column(length = 36)
     private String clientId;

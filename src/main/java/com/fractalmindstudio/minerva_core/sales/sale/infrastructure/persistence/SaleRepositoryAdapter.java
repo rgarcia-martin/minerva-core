@@ -1,9 +1,13 @@
 package com.fractalmindstudio.minerva_core.sales.sale.infrastructure.persistence;
 
+import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.SpringDataTaxRepository;
+import com.fractalmindstudio.minerva_core.identity.user.infrastructure.persistence.SpringDataUserRepository;
+import com.fractalmindstudio.minerva_core.inventory.item.infrastructure.persistence.SpringDataItemRepository;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.Sale;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.SaleLine;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.SaleRepository;
 import com.fractalmindstudio.minerva_core.shared.infrastructure.persistence.UuidMapper;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -14,9 +18,20 @@ import java.util.UUID;
 public class SaleRepositoryAdapter implements SaleRepository {
 
     private final SpringDataSaleRepository springDataSaleRepository;
+    private final SpringDataUserRepository springDataUserRepository;
+    private final SpringDataItemRepository springDataItemRepository;
+    private final SpringDataTaxRepository springDataTaxRepository;
 
-    public SaleRepositoryAdapter(final SpringDataSaleRepository springDataSaleRepository) {
+    public SaleRepositoryAdapter(
+            final SpringDataSaleRepository springDataSaleRepository,
+            final SpringDataUserRepository springDataUserRepository,
+            final SpringDataItemRepository springDataItemRepository,
+            final SpringDataTaxRepository springDataTaxRepository
+    ) {
         this.springDataSaleRepository = springDataSaleRepository;
+        this.springDataUserRepository = springDataUserRepository;
+        this.springDataItemRepository = springDataItemRepository;
+        this.springDataTaxRepository = springDataTaxRepository;
     }
 
     @Override
@@ -43,7 +58,7 @@ public class SaleRepositoryAdapter implements SaleRepository {
         final SaleEntity entity = new SaleEntity();
         entity.setId(UuidMapper.toString(sale.id()));
         entity.setCode(sale.code());
-        entity.setEmployeeId(UuidMapper.toString(sale.employeeId()));
+        entity.setEmployee(resolveReference(springDataUserRepository, UuidMapper.toString(sale.employeeId())));
         entity.setClientId(UuidMapper.toString(sale.clientId()));
         entity.setPaymentMethodId(UuidMapper.toString(sale.paymentMethodId()));
         entity.setState(sale.state());
@@ -56,11 +71,11 @@ public class SaleRepositoryAdapter implements SaleRepository {
     private SaleLineEntity toEntity(final SaleLine saleLine) {
         final SaleLineEntity entity = new SaleLineEntity();
         entity.setId(UuidMapper.toString(saleLine.id()));
-        entity.setItemId(UuidMapper.toString(saleLine.itemId()));
+        entity.setItem(resolveReference(springDataItemRepository, UuidMapper.toString(saleLine.itemId())));
         entity.setFreeConceptId(UuidMapper.toString(saleLine.freeConceptId()));
         entity.setQuantity(saleLine.quantity());
         entity.setUnitPrice(saleLine.unitPrice());
-        entity.setTaxId(UuidMapper.toString(saleLine.taxId()));
+        entity.setTax(resolveReference(springDataTaxRepository, UuidMapper.toString(saleLine.taxId())));
         return entity;
     }
 
@@ -68,7 +83,7 @@ public class SaleRepositoryAdapter implements SaleRepository {
         return new Sale(
                 UuidMapper.fromString(entity.getId()),
                 entity.getCode(),
-                UuidMapper.fromString(entity.getEmployeeId()),
+                entity.getEmployee() != null ? UuidMapper.fromString(entity.getEmployee().getId()) : null,
                 UuidMapper.fromString(entity.getClientId()),
                 UuidMapper.fromString(entity.getPaymentMethodId()),
                 entity.getState(),
@@ -81,11 +96,15 @@ public class SaleRepositoryAdapter implements SaleRepository {
     private SaleLine toDomain(final SaleLineEntity entity) {
         return new SaleLine(
                 UuidMapper.fromString(entity.getId()),
-                UuidMapper.fromString(entity.getItemId()),
+                entity.getItem() != null ? UuidMapper.fromString(entity.getItem().getId()) : null,
                 UuidMapper.fromString(entity.getFreeConceptId()),
                 entity.getQuantity(),
                 entity.getUnitPrice(),
-                UuidMapper.fromString(entity.getTaxId())
+                entity.getTax() != null ? UuidMapper.fromString(entity.getTax().getId()) : null
         );
+    }
+
+    private static <T> T resolveReference(final JpaRepository<T, String> repository, final String id) {
+        return id == null ? null : repository.getReferenceById(id);
     }
 }

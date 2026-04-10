@@ -2,6 +2,7 @@ package com.fractalmindstudio.minerva_core.catalog.article.infrastructure.persis
 
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
+import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.SpringDataTaxRepository;
 import com.fractalmindstudio.minerva_core.shared.infrastructure.persistence.UuidMapper;
 import org.springframework.stereotype.Repository;
 
@@ -13,9 +14,14 @@ import java.util.UUID;
 public class ArticleRepositoryAdapter implements ArticleRepository {
 
     private final SpringDataArticleRepository springDataArticleRepository;
+    private final SpringDataTaxRepository springDataTaxRepository;
 
-    public ArticleRepositoryAdapter(final SpringDataArticleRepository springDataArticleRepository) {
+    public ArticleRepositoryAdapter(
+            final SpringDataArticleRepository springDataArticleRepository,
+            final SpringDataTaxRepository springDataTaxRepository
+    ) {
         this.springDataArticleRepository = springDataArticleRepository;
+        this.springDataTaxRepository = springDataTaxRepository;
     }
 
     @Override
@@ -46,12 +52,12 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
         entity.setBarcode(article.barcode());
         entity.setImage(article.image());
         entity.setDescription(article.description());
-        entity.setTaxId(UuidMapper.toString(article.taxId()));
+        entity.setTax(resolveReference(springDataTaxRepository, UuidMapper.toString(article.taxId())));
         entity.setBasePrice(article.basePrice());
         entity.setRetailPrice(article.retailPrice());
         entity.setCanHaveChildren(article.canHaveChildren());
         entity.setNumberOfChildren(article.numberOfChildren());
-        entity.setParentArticleId(UuidMapper.toString(article.parentArticleId()));
+        entity.setParentArticle(resolveReference(springDataArticleRepository, UuidMapper.toString(article.parentArticleId())));
         return entity;
     }
 
@@ -63,12 +69,19 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
                 entity.getBarcode(),
                 entity.getImage(),
                 entity.getDescription(),
-                UuidMapper.fromString(entity.getTaxId()),
+                entity.getTax() != null ? UuidMapper.fromString(entity.getTax().getId()) : null,
                 entity.getBasePrice(),
                 entity.getRetailPrice(),
                 entity.isCanHaveChildren(),
                 entity.getNumberOfChildren(),
-                UuidMapper.fromString(entity.getParentArticleId())
+                entity.getParentArticle() != null ? UuidMapper.fromString(entity.getParentArticle().getId()) : null
         );
+    }
+
+    private static <T> T resolveReference(
+            final org.springframework.data.jpa.repository.JpaRepository<T, String> repository,
+            final String id
+    ) {
+        return id == null ? null : repository.getReferenceById(id);
     }
 }

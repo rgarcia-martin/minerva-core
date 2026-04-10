@@ -1,9 +1,15 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.infrastructure.persistence;
 
+import com.fractalmindstudio.minerva_core.catalog.article.infrastructure.persistence.SpringDataArticleRepository;
+import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.SpringDataTaxRepository;
+import com.fractalmindstudio.minerva_core.inventory.item.infrastructure.persistence.SpringDataItemRepository;
+import com.fractalmindstudio.minerva_core.inventory.location.infrastructure.persistence.SpringDataLocationRepository;
+import com.fractalmindstudio.minerva_core.purchasing.provider.infrastructure.persistence.SpringDataProviderRepository;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.Purchase;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseLine;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseRepository;
 import com.fractalmindstudio.minerva_core.shared.infrastructure.persistence.UuidMapper;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -14,9 +20,26 @@ import java.util.UUID;
 public class PurchaseRepositoryAdapter implements PurchaseRepository {
 
     private final SpringDataPurchaseRepository springDataPurchaseRepository;
+    private final SpringDataProviderRepository springDataProviderRepository;
+    private final SpringDataLocationRepository springDataLocationRepository;
+    private final SpringDataArticleRepository springDataArticleRepository;
+    private final SpringDataItemRepository springDataItemRepository;
+    private final SpringDataTaxRepository springDataTaxRepository;
 
-    public PurchaseRepositoryAdapter(final SpringDataPurchaseRepository springDataPurchaseRepository) {
+    public PurchaseRepositoryAdapter(
+            final SpringDataPurchaseRepository springDataPurchaseRepository,
+            final SpringDataProviderRepository springDataProviderRepository,
+            final SpringDataLocationRepository springDataLocationRepository,
+            final SpringDataArticleRepository springDataArticleRepository,
+            final SpringDataItemRepository springDataItemRepository,
+            final SpringDataTaxRepository springDataTaxRepository
+    ) {
         this.springDataPurchaseRepository = springDataPurchaseRepository;
+        this.springDataProviderRepository = springDataProviderRepository;
+        this.springDataLocationRepository = springDataLocationRepository;
+        this.springDataArticleRepository = springDataArticleRepository;
+        this.springDataItemRepository = springDataItemRepository;
+        this.springDataTaxRepository = springDataTaxRepository;
     }
 
     @Override
@@ -47,8 +70,8 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
         entity.setState(purchase.state());
         entity.setCode(purchase.code());
         entity.setProviderCode(purchase.providerCode());
-        entity.setProviderId(UuidMapper.toString(purchase.providerId()));
-        entity.setLocationId(UuidMapper.toString(purchase.locationId()));
+        entity.setProvider(resolveReference(springDataProviderRepository, UuidMapper.toString(purchase.providerId())));
+        entity.setLocation(resolveReference(springDataLocationRepository, UuidMapper.toString(purchase.locationId())));
         entity.setDeposit(purchase.deposit());
         entity.setTotalCost(purchase.totalCost());
         entity.setLines(purchase.lines().stream().map(this::toEntity).toList());
@@ -58,11 +81,12 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
     private PurchaseLineEntity toEntity(final PurchaseLine purchaseLine) {
         final PurchaseLineEntity entity = new PurchaseLineEntity();
         entity.setId(UuidMapper.toString(purchaseLine.id()));
-        entity.setArticleId(UuidMapper.toString(purchaseLine.articleId()));
+        entity.setArticle(resolveReference(springDataArticleRepository, UuidMapper.toString(purchaseLine.articleId())));
+        entity.setItem(resolveReference(springDataItemRepository, UuidMapper.toString(purchaseLine.itemId())));
         entity.setQuantity(purchaseLine.quantity());
         entity.setBuyPrice(purchaseLine.buyPrice());
         entity.setProfitMargin(purchaseLine.profitMargin());
-        entity.setTaxId(UuidMapper.toString(purchaseLine.taxId()));
+        entity.setTax(resolveReference(springDataTaxRepository, UuidMapper.toString(purchaseLine.taxId())));
         return entity;
     }
 
@@ -74,8 +98,8 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
                 entity.getState(),
                 entity.getCode(),
                 entity.getProviderCode(),
-                UuidMapper.fromString(entity.getProviderId()),
-                UuidMapper.fromString(entity.getLocationId()),
+                entity.getProvider() != null ? UuidMapper.fromString(entity.getProvider().getId()) : null,
+                entity.getLocation() != null ? UuidMapper.fromString(entity.getLocation().getId()) : null,
                 entity.isDeposit(),
                 entity.getLines().stream().map(this::toDomain).toList(),
                 entity.getTotalCost()
@@ -85,11 +109,16 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
     private PurchaseLine toDomain(final PurchaseLineEntity entity) {
         return new PurchaseLine(
                 UuidMapper.fromString(entity.getId()),
-                UuidMapper.fromString(entity.getArticleId()),
+                entity.getArticle() != null ? UuidMapper.fromString(entity.getArticle().getId()) : null,
+                entity.getItem() != null ? UuidMapper.fromString(entity.getItem().getId()) : null,
                 entity.getQuantity(),
                 entity.getBuyPrice(),
                 entity.getProfitMargin(),
-                UuidMapper.fromString(entity.getTaxId())
+                entity.getTax() != null ? UuidMapper.fromString(entity.getTax().getId()) : null
         );
+    }
+
+    private static <T> T resolveReference(final JpaRepository<T, String> repository, final String id) {
+        return id == null ? null : repository.getReferenceById(id);
     }
 }

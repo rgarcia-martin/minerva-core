@@ -1,5 +1,7 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.infrastructure.persistence;
 
+import com.fractalmindstudio.minerva_core.inventory.location.infrastructure.persistence.LocationEntity;
+import com.fractalmindstudio.minerva_core.purchasing.provider.infrastructure.persistence.ProviderEntity;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseState;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -9,6 +11,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
@@ -45,11 +48,13 @@ public class PurchaseEntity {
     @Column(nullable = false)
     private String providerCode;
 
-    @Column(nullable = false, length = 36)
-    private String providerId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "provider_id", referencedColumnName = "id", nullable = false)
+    private ProviderEntity provider;
 
-    @Column(nullable = false, length = 36)
-    private String locationId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "location_id", referencedColumnName = "id", nullable = false)
+    private LocationEntity location;
 
     @Column(nullable = false)
     private boolean deposit;

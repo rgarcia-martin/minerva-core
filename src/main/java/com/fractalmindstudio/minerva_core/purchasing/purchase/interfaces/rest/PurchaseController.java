@@ -124,6 +124,7 @@ public class PurchaseController {
         return new PurchaseLineResponse(
                 purchaseLine.id(),
                 purchaseLine.articleId(),
+                purchaseLine.itemId(),
                 purchaseLine.quantity(),
                 purchaseLine.buyPrice(),
                 purchaseLine.profitMargin(),
@@ -171,6 +172,7 @@ public class PurchaseController {
     public record PurchaseLineResponse(
             UUID id,
             UUID articleId,
+            UUID itemId,
             int quantity,
             BigDecimal buyPrice,
             BigDecimal profitMargin,

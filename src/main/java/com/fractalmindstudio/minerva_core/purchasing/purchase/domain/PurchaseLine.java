@@ -8,6 +8,7 @@ import java.util.UUID;
 public record PurchaseLine(
         UUID id,
         UUID articleId,
+        UUID itemId,
         int quantity,
         BigDecimal buyPrice,
         BigDecimal profitMargin,
@@ -41,7 +42,7 @@ public record PurchaseLine(
             final BigDecimal profitMargin,
             final UUID taxId
     ) {
-        return new PurchaseLine(UUID.randomUUID(), articleId, quantity, buyPrice, profitMargin, taxId);
+        return new PurchaseLine(UUID.randomUUID(), articleId, null, quantity, buyPrice, profitMargin, taxId);
     }
 
     public BigDecimal lineTotal() {

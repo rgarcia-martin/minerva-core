@@ -1,8 +1,12 @@
 package com.fractalmindstudio.minerva_core.catalog.article.infrastructure.persistence;
 
+import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.TaxEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -34,8 +38,9 @@ public class ArticleEntity {
     @Column(length = 4000)
     private String description;
 
-    @Column(nullable = false, length = 36)
-    private String taxId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tax_id", referencedColumnName = "id")
+    private TaxEntity tax;
 
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal basePrice;
@@ -49,7 +54,7 @@ public class ArticleEntity {
     @Column(nullable = false)
     private int numberOfChildren;
 
-    @Column(length = 36)
-    private String parentArticleId;
-
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_article_id", referencedColumnName = "id")
+    private ArticleEntity parentArticle;
 }

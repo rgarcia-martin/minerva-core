@@ -8,7 +8,9 @@
       "Bash(ls db/)",
       "Bash(tasklist)",
       "Bash(./mvnw dependency:tree -Dscope=test)",
-      "Bash(jar tf:*)"
+      "Bash(jar tf:*)",
+      "Bash(./mvnw package:*)",
+      "Bash(./mvnw spring-boot:run)"
     ]
   }
 }
