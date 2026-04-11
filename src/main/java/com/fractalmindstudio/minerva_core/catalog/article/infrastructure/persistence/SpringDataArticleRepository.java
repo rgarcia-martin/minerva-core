@@ -6,5 +6,5 @@ import java.util.List;
 
 public interface SpringDataArticleRepository extends JpaRepository<ArticleEntity, String> {
 
-    List<ArticleEntity> findByParentArticle_Id(String parentArticleId);
+    List<ArticleEntity> findAllByOrderByNameAscCodeAsc();
 }

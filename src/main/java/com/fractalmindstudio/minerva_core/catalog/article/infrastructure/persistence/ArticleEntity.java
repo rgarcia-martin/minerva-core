@@ -29,7 +29,7 @@ public class ArticleEntity {
     @Column(nullable = false, unique = true)
     private String code;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String barcode;
 
     @Column(length = 4000)
@@ -39,7 +39,7 @@ public class ArticleEntity {
     private String description;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "tax_id", referencedColumnName = "id")
+    @JoinColumn(name = "tax_id", referencedColumnName = "id", nullable = false)
     private TaxEntity tax;
 
     @Column(nullable = false, precision = 19, scale = 2)
@@ -55,6 +55,6 @@ public class ArticleEntity {
     private int numberOfChildren;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "parent_article_id", referencedColumnName = "id")
-    private ArticleEntity parentArticle;
+    @JoinColumn(name = "child_article_id", referencedColumnName = "id")
+    private ArticleEntity childArticle;
 }

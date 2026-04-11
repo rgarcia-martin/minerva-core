@@ -2,9 +2,12 @@ package com.fractalmindstudio.minerva_core.purchasing.purchase.infrastructure.pe
 
 import com.fractalmindstudio.minerva_core.catalog.article.infrastructure.persistence.ArticleEntity;
 import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.TaxEntity;
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemStatus;
 import com.fractalmindstudio.minerva_core.inventory.item.infrastructure.persistence.ItemEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -45,4 +48,11 @@ public class PurchaseLineEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tax_id", referencedColumnName = "id", nullable = false)
     private TaxEntity tax;
+
+    @Enumerated(EnumType.STRING)
+    @Column
+    private ItemStatus itemStatus;
+
+    @Column
+    private Boolean hasChildren;
 }

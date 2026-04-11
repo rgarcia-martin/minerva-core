@@ -62,7 +62,7 @@ public class PurchaseEntity {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal totalCost;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "purchase_id", nullable = false)
     @OrderColumn(name = "line_position")
     private List<PurchaseLineEntity> lines = new ArrayList<>();

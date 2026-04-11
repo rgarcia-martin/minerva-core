@@ -2,6 +2,7 @@ package com.fractalmindstudio.minerva_core.shared.domain;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Locale;
 import java.util.Objects;
 
 public final class DomainRules {
@@ -25,6 +26,19 @@ public final class DomainRules {
         }
 
         return value.trim();
+    }
+
+    public static String trimToNull(final String value) {
+        if (value == null) {
+            return null;
+        }
+
+        final String trimmedValue = value.trim();
+        return trimmedValue.isEmpty() ? null : trimmedValue;
+    }
+
+    public static String normalizeEmail(final String value, final String fieldName) {
+        return requireNonBlank(value, fieldName).toLowerCase(Locale.ROOT);
     }
 
     public static BigDecimal requirePositiveOrZero(final BigDecimal value, final String fieldName) {

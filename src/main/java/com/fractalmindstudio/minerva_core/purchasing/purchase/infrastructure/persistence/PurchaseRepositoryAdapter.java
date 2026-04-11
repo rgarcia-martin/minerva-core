@@ -8,10 +8,12 @@ import com.fractalmindstudio.minerva_core.purchasing.provider.infrastructure.per
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.Purchase;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseLine;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseRepository;
+import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import com.fractalmindstudio.minerva_core.shared.infrastructure.persistence.UuidMapper;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,7 +56,7 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
 
     @Override
     public List<Purchase> findAll() {
-        return springDataPurchaseRepository.findAll().stream().map(this::toDomain).toList();
+        return springDataPurchaseRepository.findAllByOrderByCreatedOnDesc().stream().map(this::toDomain).toList();
     }
 
     @Override
@@ -70,23 +72,25 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
         entity.setState(purchase.state());
         entity.setCode(purchase.code());
         entity.setProviderCode(purchase.providerCode());
-        entity.setProvider(resolveReference(springDataProviderRepository, UuidMapper.toString(purchase.providerId())));
-        entity.setLocation(resolveReference(springDataLocationRepository, UuidMapper.toString(purchase.locationId())));
+        entity.setProvider(resolveReference(springDataProviderRepository, purchase.providerId(), "provider"));
+        entity.setLocation(resolveReference(springDataLocationRepository, purchase.locationId(), "location"));
         entity.setDeposit(purchase.deposit());
         entity.setTotalCost(purchase.totalCost());
-        entity.setLines(purchase.lines().stream().map(this::toEntity).toList());
+        entity.setLines(new ArrayList<>(purchase.lines().stream().map(this::toEntity).toList()));
         return entity;
     }
 
     private PurchaseLineEntity toEntity(final PurchaseLine purchaseLine) {
         final PurchaseLineEntity entity = new PurchaseLineEntity();
         entity.setId(UuidMapper.toString(purchaseLine.id()));
-        entity.setArticle(resolveReference(springDataArticleRepository, UuidMapper.toString(purchaseLine.articleId())));
-        entity.setItem(resolveReference(springDataItemRepository, UuidMapper.toString(purchaseLine.itemId())));
+        entity.setArticle(resolveReference(springDataArticleRepository, purchaseLine.articleId(), "article"));
+        entity.setItem(resolveReference(springDataItemRepository, purchaseLine.itemId(), "item"));
         entity.setQuantity(purchaseLine.quantity());
         entity.setBuyPrice(purchaseLine.buyPrice());
         entity.setProfitMargin(purchaseLine.profitMargin());
-        entity.setTax(resolveReference(springDataTaxRepository, UuidMapper.toString(purchaseLine.taxId())));
+        entity.setTax(resolveReference(springDataTaxRepository, purchaseLine.taxId(), "tax"));
+        entity.setItemStatus(purchaseLine.itemStatus());
+        entity.setHasChildren(purchaseLine.hasChildren());
         return entity;
     }
 
@@ -114,11 +118,17 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
                 entity.getQuantity(),
                 entity.getBuyPrice(),
                 entity.getProfitMargin(),
-                entity.getTax() != null ? UuidMapper.fromString(entity.getTax().getId()) : null
+                entity.getTax() != null ? UuidMapper.fromString(entity.getTax().getId()) : null,
+                entity.getItemStatus(),
+                Boolean.TRUE.equals(entity.getHasChildren())
         );
     }
 
-    private static <T> T resolveReference(final JpaRepository<T, String> repository, final String id) {
-        return id == null ? null : repository.getReferenceById(id);
+    private static <T> T resolveReference(final JpaRepository<T, String> repository, final UUID id, final String resourceName) {
+        if (id == null) {
+            return null;
+        }
+        return repository.findById(UuidMapper.toString(id))
+                .orElseThrow(() -> new NotFoundException(resourceName, id));
     }
 }

@@ -12,5 +12,9 @@ public interface ItemRepository {
 
     List<Item> findAll();
 
+    List<Item> findAllByOriginPurchaseId(UUID originPurchaseId);
+
     void deleteById(UUID id);
+
+    void deleteAllByOriginPurchaseId(UUID originPurchaseId);
 }

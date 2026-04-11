@@ -1,5 +1,6 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.domain;
 
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemStatus;
 import com.fractalmindstudio.minerva_core.shared.domain.DomainRules;
 
 import java.math.BigDecimal;
@@ -12,7 +13,9 @@ public record PurchaseLine(
         int quantity,
         BigDecimal buyPrice,
         BigDecimal profitMargin,
-        UUID taxId
+        UUID taxId,
+        ItemStatus itemStatus,
+        boolean hasChildren
 ) {
 
     public static final String FIELD_ID = "purchaseLine.id";
@@ -33,6 +36,7 @@ public record PurchaseLine(
         DomainRules.requirePositiveOrZero(profitMargin, FIELD_PROFIT_MARGIN);
         profitMargin = DomainRules.scaleRate(profitMargin);
         DomainRules.requireNonNull(taxId, FIELD_TAX_ID);
+        itemStatus = itemStatus == null ? ItemStatus.AVAILABLE : itemStatus;
     }
 
     public static PurchaseLine create(
@@ -42,7 +46,29 @@ public record PurchaseLine(
             final BigDecimal profitMargin,
             final UUID taxId
     ) {
-        return new PurchaseLine(UUID.randomUUID(), articleId, null, quantity, buyPrice, profitMargin, taxId);
+        return create(articleId, quantity, buyPrice, profitMargin, taxId, null, false);
+    }
+
+    public static PurchaseLine create(
+            final UUID articleId,
+            final int quantity,
+            final BigDecimal buyPrice,
+            final BigDecimal profitMargin,
+            final UUID taxId,
+            final ItemStatus itemStatus,
+            final boolean hasChildren
+    ) {
+        return new PurchaseLine(
+                UUID.randomUUID(),
+                articleId,
+                null,
+                quantity,
+                buyPrice,
+                profitMargin,
+                taxId,
+                itemStatus,
+                hasChildren
+        );
     }
 
     public BigDecimal lineTotal() {

@@ -3,7 +3,9 @@ package com.fractalmindstudio.minerva_core.catalog.article.infrastructure.persis
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
 import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.SpringDataTaxRepository;
+import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import com.fractalmindstudio.minerva_core.shared.infrastructure.persistence.UuidMapper;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -36,13 +38,7 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
 
     @Override
     public List<Article> findAll() {
-        return springDataArticleRepository.findAll().stream().map(this::toDomain).toList();
-    }
-
-    @Override
-    public List<Article> findByParentArticleId(final UUID parentArticleId) {
-        return springDataArticleRepository.findByParentArticle_Id(UuidMapper.toString(parentArticleId))
-                .stream().map(this::toDomain).toList();
+        return springDataArticleRepository.findAllByOrderByNameAscCodeAsc().stream().map(this::toDomain).toList();
     }
 
     @Override
@@ -58,12 +54,12 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
         entity.setBarcode(article.barcode());
         entity.setImage(article.image());
         entity.setDescription(article.description());
-        entity.setTax(resolveReference(springDataTaxRepository, UuidMapper.toString(article.taxId())));
+        entity.setTax(resolveReference(springDataTaxRepository, article.taxId(), "tax"));
         entity.setBasePrice(article.basePrice());
         entity.setRetailPrice(article.retailPrice());
         entity.setCanHaveChildren(article.canHaveChildren());
         entity.setNumberOfChildren(article.numberOfChildren());
-        entity.setParentArticle(resolveReference(springDataArticleRepository, UuidMapper.toString(article.parentArticleId())));
+        entity.setChildArticle(resolveReference(springDataArticleRepository, article.childArticleId(), "article"));
         return entity;
     }
 
@@ -80,14 +76,19 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
                 entity.getRetailPrice(),
                 entity.isCanHaveChildren(),
                 entity.getNumberOfChildren(),
-                entity.getParentArticle() != null ? UuidMapper.fromString(entity.getParentArticle().getId()) : null
+                entity.getChildArticle() != null ? UuidMapper.fromString(entity.getChildArticle().getId()) : null
         );
     }
 
     private static <T> T resolveReference(
-            final org.springframework.data.jpa.repository.JpaRepository<T, String> repository,
-            final String id
+            final JpaRepository<T, String> repository,
+            final UUID id,
+            final String resourceName
     ) {
-        return id == null ? null : repository.getReferenceById(id);
+        if (id == null) {
+            return null;
+        }
+        return repository.findById(UuidMapper.toString(id))
+                .orElseThrow(() -> new NotFoundException(resourceName, id));
     }
 }

@@ -10,18 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/**
- * Tests for the SaleLine domain model.
- * A sale line can reference either an inventory item (via itemId) or a free
- * concept (via freeConceptId), but not both. This distinction allows a single
- * sale to mix physical stock and services (Strategy pattern for line types).
- */
 class SaleLineTest {
 
     private static final BigDecimal VALID_UNIT_PRICE = new BigDecimal("15.00");
     private static final int VALID_QUANTITY = 2;
-
-    // --- Item-based line ---
 
     @Test
     void shouldCreateItemLineWithGeneratedId() {
@@ -39,17 +31,6 @@ class SaleLineTest {
     }
 
     @Test
-    void shouldAlwaysSetQuantityToOneForItemLines() {
-        final SaleLine line = SaleLine.createForItem(
-                UUID.randomUUID(), VALID_UNIT_PRICE, UUID.randomUUID()
-        );
-
-        assertEquals(1, line.quantity());
-    }
-
-    // --- Free concept-based line ---
-
-    @Test
     void shouldCreateFreeConceptLineWithQuantity() {
         final UUID freeConceptId = UUID.randomUUID();
         final UUID taxId = UUID.randomUUID();
@@ -64,15 +45,12 @@ class SaleLineTest {
         assertEquals(VALID_QUANTITY, line.quantity());
     }
 
-    // --- Line total calculation ---
-
     @Test
     void shouldCalculateLineTotalForItemLine() {
         final SaleLine line = SaleLine.createForItem(
                 UUID.randomUUID(), new BigDecimal("25.50"), UUID.randomUUID()
         );
 
-        // 1 * 25.50 = 25.50
         assertEquals(new BigDecimal("25.50"), line.lineTotal());
     }
 
@@ -82,11 +60,8 @@ class SaleLineTest {
                 UUID.randomUUID(), 3, new BigDecimal("0.10"), UUID.randomUUID()
         );
 
-        // 3 * 0.10 = 0.30
         assertEquals(new BigDecimal("0.30"), line.lineTotal());
     }
-
-    // --- Price scaling ---
 
     @Test
     void shouldScaleUnitPriceToTwoDecimalPlaces() {
@@ -97,16 +72,12 @@ class SaleLineTest {
         assertEquals(new BigDecimal("15.13"), line.unitPrice());
     }
 
-    // --- Invariant enforcement: item lines ---
-
     @Test
     void shouldRejectNullItemId() {
         assertThrows(NullPointerException.class, () -> SaleLine.createForItem(
                 null, VALID_UNIT_PRICE, UUID.randomUUID()
         ));
     }
-
-    // --- Invariant enforcement: free concept lines ---
 
     @Test
     void shouldRejectNullFreeConceptId() {
@@ -129,8 +100,6 @@ class SaleLineTest {
         ));
     }
 
-    // --- Invariant enforcement: shared ---
-
     @Test
     void shouldRejectNegativeUnitPrice() {
         assertThrows(IllegalArgumentException.class, () -> SaleLine.createForItem(
@@ -149,6 +118,27 @@ class SaleLineTest {
     void shouldRejectNullTaxId() {
         assertThrows(NullPointerException.class, () -> SaleLine.createForItem(
                 UUID.randomUUID(), VALID_UNIT_PRICE, null
+        ));
+    }
+
+    @Test
+    void shouldRejectManualConstructionWithoutReference() {
+        assertThrows(IllegalArgumentException.class, () -> new SaleLine(
+                UUID.randomUUID(), null, null, 1, VALID_UNIT_PRICE, UUID.randomUUID()
+        ));
+    }
+
+    @Test
+    void shouldRejectManualConstructionWithBothReferences() {
+        assertThrows(IllegalArgumentException.class, () -> new SaleLine(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, VALID_UNIT_PRICE, UUID.randomUUID()
+        ));
+    }
+
+    @Test
+    void shouldRejectItemLineWithQuantityDifferentFromOne() {
+        assertThrows(IllegalArgumentException.class, () -> new SaleLine(
+                UUID.randomUUID(), UUID.randomUUID(), null, 2, VALID_UNIT_PRICE, UUID.randomUUID()
         ));
     }
 }

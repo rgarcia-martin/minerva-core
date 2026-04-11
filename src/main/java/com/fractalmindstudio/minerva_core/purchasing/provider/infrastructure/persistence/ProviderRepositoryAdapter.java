@@ -30,7 +30,7 @@ public class ProviderRepositoryAdapter implements ProviderRepository {
 
     @Override
     public List<Provider> findAll() {
-        return springDataProviderRepository.findAll().stream().map(this::toDomain).toList();
+        return springDataProviderRepository.findAllByOrderByBusinessNameAsc().stream().map(this::toDomain).toList();
     }
 
     @Override

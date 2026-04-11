@@ -8,42 +8,33 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests for the User domain model.
- * A user represents a system employee with authentication credentials,
- * a set of global roles (READ, CREATE, EDIT, DELETE), and an active flag
- * that allows deactivation without losing historical data.
- */
 class UserTest {
 
     private static final String VALID_NAME = "John";
     private static final String VALID_LAST_NAME = "Doe";
     private static final String VALID_EMAIL = "john.doe@company.com";
-    private static final String VALID_PASSWORD = "hashed_password_abc123";
+    private static final String VALID_PASSWORD_HASH = "hashed_password_abc123";
     private static final String VALID_ADDRESS = "Main Street 42";
     private static final Set<Role> EMPLOYEE_ROLES = Set.of(Role.READ, Role.CREATE);
-
-    // --- Factory method ---
 
     @Test
     void shouldCreateUserWithGeneratedIdAndActiveByDefault() {
         final User user = User.create(
                 VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
+                VALID_PASSWORD_HASH, VALID_ADDRESS, EMPLOYEE_ROLES
         );
 
         assertNotNull(user.id());
         assertEquals(VALID_NAME, user.name());
         assertEquals(VALID_LAST_NAME, user.lastName());
         assertEquals(VALID_EMAIL, user.email());
-        assertEquals(VALID_PASSWORD, user.password());
+        assertEquals(VALID_PASSWORD_HASH, user.passwordHash());
         assertTrue(user.active());
     }
-
-    // --- Roles ---
 
     @Test
     void shouldAssignProvidedRoles() {
@@ -51,10 +42,21 @@ class UserTest {
 
         final User user = User.create(
                 VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, roles
+                VALID_PASSWORD_HASH, VALID_ADDRESS, roles
         );
 
         assertEquals(roles, user.roles());
+    }
+
+    @Test
+    void shouldNormalizeEmailAndAddress() {
+        final User user = User.create(
+                VALID_NAME, VALID_LAST_NAME, "  JOHN.DOE@COMPANY.COM  ",
+                VALID_PASSWORD_HASH, "  ", EMPLOYEE_ROLES
+        );
+
+        assertEquals("john.doe@company.com", user.email());
+        assertNull(user.address());
     }
 
     @Test
@@ -63,7 +65,7 @@ class UserTest {
 
         final User admin = User.create(
                 "Admin", "System", "admin@company.com",
-                VALID_PASSWORD, null, allRoles
+                VALID_PASSWORD_HASH, null, allRoles
         );
 
         assertTrue(admin.roles().contains(Role.READ));
@@ -73,67 +75,10 @@ class UserTest {
     }
 
     @Test
-    void shouldRejectNullRoles() {
-        assertThrows(NullPointerException.class, () -> User.create(
-                VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, null
-        ));
-    }
-
-    @Test
-    void shouldRejectEmptyRoles() {
-        assertThrows(IllegalArgumentException.class, () -> User.create(
-                VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, Set.of()
-        ));
-    }
-
-    @Test
-    void shouldMakeRolesImmutable() {
-        final User user = User.create(
-                VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
-        );
-
-        assertThrows(UnsupportedOperationException.class, () -> user.roles().add(Role.DELETE));
-    }
-
-    // --- Active/deactivation ---
-
-    @Test
-    void shouldDeactivateUser() {
-        final User user = User.create(
-                VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
-        );
-
-        final User deactivated = user.deactivate();
-
-        assertFalse(deactivated.active());
-        assertEquals(user.id(), deactivated.id());
-        assertEquals(user.name(), deactivated.name());
-    }
-
-    @Test
-    void shouldReconstructInactiveUserFromPersistence() {
-        final UUID existingId = UUID.randomUUID();
-
-        final User user = new User(
-                existingId, VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES, false
-        );
-
-        assertFalse(user.active());
-        assertEquals(existingId, user.id());
-    }
-
-    // --- Invariant enforcement ---
-
-    @Test
     void shouldRejectNullId() {
         assertThrows(NullPointerException.class, () -> new User(
                 null, VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES, true
+                VALID_PASSWORD_HASH, VALID_ADDRESS, EMPLOYEE_ROLES, true
         ));
     }
 
@@ -141,7 +86,7 @@ class UserTest {
     void shouldRejectBlankName() {
         assertThrows(IllegalArgumentException.class, () -> User.create(
                 "", VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
+                VALID_PASSWORD_HASH, VALID_ADDRESS, EMPLOYEE_ROLES
         ));
     }
 
@@ -149,43 +94,59 @@ class UserTest {
     void shouldRejectBlankLastName() {
         assertThrows(IllegalArgumentException.class, () -> User.create(
                 VALID_NAME, "", VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
+                VALID_PASSWORD_HASH, VALID_ADDRESS, EMPLOYEE_ROLES
         ));
     }
 
     @Test
     void shouldRejectBlankEmail() {
         assertThrows(IllegalArgumentException.class, () -> User.create(
-                VALID_NAME, VALID_LAST_NAME, "",
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
+                VALID_NAME, VALID_LAST_NAME, " ",
+                VALID_PASSWORD_HASH, VALID_ADDRESS, EMPLOYEE_ROLES
         ));
     }
 
     @Test
-    void shouldRejectBlankPassword() {
+    void shouldRejectBlankPasswordHash() {
         assertThrows(IllegalArgumentException.class, () -> User.create(
                 VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
-                "", VALID_ADDRESS, EMPLOYEE_ROLES
+                " ", VALID_ADDRESS, EMPLOYEE_ROLES
         ));
     }
 
     @Test
-    void shouldTrimName() {
-        final User user = User.create(
-                "  John  ", VALID_LAST_NAME, VALID_EMAIL,
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
-        );
-
-        assertEquals("John", user.name());
+    void shouldRejectEmptyRoles() {
+        assertThrows(IllegalArgumentException.class, () -> User.create(
+                VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
+                VALID_PASSWORD_HASH, VALID_ADDRESS, Set.of()
+        ));
     }
 
     @Test
-    void shouldTrimEmail() {
+    void shouldDefensivelyCopyRoles() {
+        final var mutableRoles = new java.util.HashSet<Role>();
+        mutableRoles.add(Role.READ);
+
         final User user = User.create(
-                VALID_NAME, VALID_LAST_NAME, "  john@company.com  ",
-                VALID_PASSWORD, VALID_ADDRESS, EMPLOYEE_ROLES
+                VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
+                VALID_PASSWORD_HASH, VALID_ADDRESS, mutableRoles
+        );
+        mutableRoles.add(Role.DELETE);
+
+        assertEquals(Set.of(Role.READ), user.roles());
+    }
+
+    @Test
+    void shouldDeactivateUser() {
+        final User user = User.create(
+                VALID_NAME, VALID_LAST_NAME, VALID_EMAIL,
+                VALID_PASSWORD_HASH, VALID_ADDRESS, EMPLOYEE_ROLES
         );
 
-        assertEquals("john@company.com", user.email());
+        final User deactivated = user.deactivate();
+
+        assertFalse(deactivated.active());
+        assertEquals(user.id(), deactivated.id());
+        assertEquals(user.passwordHash(), deactivated.passwordHash());
     }
 }

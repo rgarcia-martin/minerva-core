@@ -28,27 +28,33 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PasswordHasher passwordHasher;
+
     @InjectMocks
     private UserService userService;
 
     @Test
-    void shouldCreateUser() {
+    void shouldCreateUserHashingPassword() {
+        when(passwordHasher.hash("pass")).thenReturn("hashed-pass");
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        final var result = userService.create("John", "Doe", "john@test.com", "pass", "123 St", Set.of(Role.READ));
+        final var result = userService.create("John", "Doe", "John@Test.com", "pass", "123 St", Set.of(Role.READ));
 
         assertThat(result.name()).isEqualTo("John");
         assertThat(result.active()).isTrue();
         assertThat(result.id()).isNotNull();
+        assertThat(result.passwordHash()).isEqualTo("hashed-pass");
+        assertThat(result.email()).isEqualTo("john@test.com");
 
         final var captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
-        assertThat(captor.getValue().email()).isEqualTo("john@test.com");
+        assertThat(captor.getValue().passwordHash()).isEqualTo("hashed-pass");
     }
 
     @Test
     void shouldGetUserById() {
-        final var user = User.create("John", "Doe", "john@test.com", "pass", null, Set.of(Role.READ));
+        final var user = User.create("John", "Doe", "john@test.com", "hashed-pass", null, Set.of(Role.READ));
         when(userRepository.findById(user.id())).thenReturn(Optional.of(user));
 
         final var result = userService.getById(user.id());
@@ -67,22 +73,22 @@ class UserServiceTest {
     }
 
     @Test
-    void shouldFindAllUsersSortedByLastNameThenName() {
-        final var bob = User.create("Bob", "Adams", "bob@test.com", "pass", null, Set.of(Role.READ));
-        final var alice = User.create("Alice", "Brown", "alice@test.com", "pass", null, Set.of(Role.READ));
-        final var anna = User.create("Anna", "Adams", "anna@test.com", "pass", null, Set.of(Role.READ));
-        when(userRepository.findAll()).thenReturn(List.of(bob, alice, anna));
+    void shouldReturnRepositoryOrderFromFindAll() {
+        final var anna = User.create("Anna", "Adams", "anna@test.com", "hash1", null, Set.of(Role.READ));
+        final var bob = User.create("Bob", "Brown", "bob@test.com", "hash2", null, Set.of(Role.READ));
+        when(userRepository.findAll()).thenReturn(List.of(anna, bob));
 
         final var result = userService.findAll();
 
-        assertThat(result).extracting(User::name).containsExactly("Anna", "Bob", "Alice");
+        assertThat(result).extracting(User::name).containsExactly("Anna", "Bob");
     }
 
     @Test
-    void shouldUpdateUser() {
+    void shouldUpdateUserHashingPassword() {
         final var id = UUID.randomUUID();
-        final var existing = new User(id, "Old", "Name", "old@test.com", "pass", null, Set.of(Role.READ), true);
+        final var existing = new User(id, "Old", "Name", "old@test.com", "old-hash", null, Set.of(Role.READ), true);
         when(userRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(passwordHasher.hash("newpass")).thenReturn("new-hash");
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
         final var result = userService.update(id, "Jane", "Doe", "jane@test.com", "newpass", "456 Ave", Set.of(Role.EDIT), false);
@@ -90,6 +96,7 @@ class UserServiceTest {
         assertThat(result.id()).isEqualTo(id);
         assertThat(result.name()).isEqualTo("Jane");
         assertThat(result.active()).isFalse();
+        assertThat(result.passwordHash()).isEqualTo("new-hash");
     }
 
     @Test
@@ -104,7 +111,7 @@ class UserServiceTest {
     @Test
     void shouldDeleteUser() {
         final var id = UUID.randomUUID();
-        final var user = new User(id, "John", "Doe", "j@t.com", "pass", null, Set.of(Role.READ), true);
+        final var user = new User(id, "John", "Doe", "j@t.com", "hash", null, Set.of(Role.READ), true);
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
 
         userService.delete(id);

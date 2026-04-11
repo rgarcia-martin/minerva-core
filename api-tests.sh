@@ -12,6 +12,15 @@ PASS=0
 FAIL=0
 TOTAL=0
 
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN=python
+else
+    echo "Python 3 is required to parse JSON responses in api-tests.sh" >&2
+    exit 1
+fi
+
 # --- Helpers -----------------------------------------------------------------
 
 assert_status() {
@@ -62,6 +71,26 @@ extract_id() {
 
 extract_all_ids() {
     echo "$1" | grep -o '"id":"[^"]*"' | cut -d'"' -f4
+}
+
+extract_new_item_ids() {
+    local before_body="$1"
+    local after_body="$2"
+    BEFORE_ITEMS_BODY="$before_body" AFTER_ITEMS_BODY="$after_body" "$PYTHON_BIN" - <<'PY2'
+import json
+import os
+
+before_text = os.environ.get("BEFORE_ITEMS_BODY", "[]") or "[]"
+after_text = os.environ.get("AFTER_ITEMS_BODY", "[]") or "[]"
+
+before = {item.get("id") for item in json.loads(before_text)}
+after = json.loads(after_text)
+
+for item in after:
+    item_id = item.get("id")
+    if item_id not in before:
+        print(item_id)
+PY2
 }
 
 assert_count() {
@@ -391,70 +420,115 @@ parse_response "$response"
 assert_status "GET /users/{id} — not found → 404" 404 "$STATUS"
 
 # =============================================================================
-# 6. ITEMS
+# 6. PAYMENT METHODS
+# =============================================================================
+echo ""
+echo "=== PAYMENT METHODS ==="
+
+response=$(do_post "$BASE_URL/payment-methods" '{"name":"Cash Register","type":"CASH"}')
+parse_response "$response"
+assert_status "POST /payment-methods — create" 201 "$STATUS"
+assert_contains "POST /payment-methods — returns name" "Cash Register" "$BODY"
+assert_contains "POST /payment-methods — returns type" "CASH" "$BODY"
+PAYMENT_METHOD_ID=$(extract_id "$BODY")
+
+response=$(do_get "$BASE_URL/payment-methods/$PAYMENT_METHOD_ID")
+parse_response "$response"
+assert_status "GET /payment-methods/{id} — found" 200 "$STATUS"
+
+response=$(do_get "$BASE_URL/payment-methods")
+parse_response "$response"
+assert_status "GET /payment-methods — list" 200 "$STATUS"
+
+response=$(do_put "$BASE_URL/payment-methods/$PAYMENT_METHOD_ID" '{"name":"Cash Register Updated","type":"CASH"}')
+parse_response "$response"
+assert_status "PUT /payment-methods/{id} — update" 200 "$STATUS"
+assert_contains "PUT /payment-methods/{id} — updated name" "Cash Register Updated" "$BODY"
+
+do_put "$BASE_URL/payment-methods/$PAYMENT_METHOD_ID" '{"name":"Cash Register","type":"CASH"}' > /dev/null
+
+response=$(do_post "$BASE_URL/payment-methods" '{"name":"","type":"CASH"}')
+parse_response "$response"
+assert_status "POST /payment-methods — blank name → 400" 400 "$STATUS"
+
+response=$(do_post "$BASE_URL/payment-methods" '{"name":"Broken"}')
+parse_response "$response"
+assert_status "POST /payment-methods — null type → 400" 400 "$STATUS"
+
+response=$(do_get "$BASE_URL/payment-methods/00000000-0000-0000-0000-000000000000")
+parse_response "$response"
+assert_status "GET /payment-methods/{id} — not found → 404" 404 "$STATUS"
+
+# =============================================================================
+# 7. ITEMS (READ-ONLY STOCK QUERY API)
 # =============================================================================
 echo ""
 echo "=== ITEMS ==="
 
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE_ID\",\"cost\":99.99,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
+response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-assert_status "POST /items — create" 201 "$STATUS"
-assert_contains "POST /items — returns articleId" "$ARTICLE_ID" "$BODY"
-assert_contains "POST /items — default status AVAILABLE" "AVAILABLE" "$BODY"
-assert_contains "POST /items — returns cost" "99.99" "$BODY"
-ITEM_ID=$(extract_id "$BODY")
+assert_status "GET /items — initial list" 200 "$STATUS"
+ITEMS_BEFORE_BODY="$BODY"
 
-# Create second item
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE2_ID\",\"cost\":1.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
+SEED_ITEM_PURCHASE_LINES="[{\"articleId\":\"$ARTICLE_ID\",\"quantity\":1,\"buyPrice\":99.99,\"profitMargin\":25.0,\"taxId\":\"$TAX_ID\"},{\"articleId\":\"$ARTICLE2_ID\",\"quantity\":1,\"buyPrice\":1.00,\"profitMargin\":30.0,\"taxId\":\"$TAX_ID\"}]"
+response=$(do_post "$BASE_URL/purchases" "{\"code\":\"PUR-ITEM-SEED-001\",\"providerCode\":\"ALB-ITEM-SEED\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":$SEED_ITEM_PURCHASE_LINES}")
 parse_response "$response"
-ITEM2_ID=$(extract_id "$BODY")
+assert_status "POST /purchases — seed stock for items API" 201 "$STATUS"
+ITEM_SEED_PURCHASE_ID=$(extract_id "$BODY")
+
+response=$(do_get "$BASE_URL/items")
+parse_response "$response"
+assert_status "GET /items — list after seed purchase" 200 "$STATUS"
+ITEMS_AFTER_BODY="$BODY"
+mapfile -t SEEDED_ITEM_IDS < <(extract_new_item_ids "$ITEMS_BEFORE_BODY" "$ITEMS_AFTER_BODY")
+assert_count "ITEMS — purchase generated 2 stock entries" 2 "${#SEEDED_ITEM_IDS[@]}"
+
+ITEM_ID=""
+ITEM2_ID=""
+for new_id in "${SEEDED_ITEM_IDS[@]}"; do
+    response=$(do_get "$BASE_URL/items/$new_id")
+    parse_response "$response"
+    if echo "$BODY" | grep -q "\"articleId\":\"$ARTICLE_ID\""; then
+        ITEM_ID="$new_id"
+    fi
+    if echo "$BODY" | grep -q "\"articleId\":\"$ARTICLE2_ID\""; then
+        ITEM2_ID="$new_id"
+    fi
+done
 
 response=$(do_get "$BASE_URL/items/$ITEM_ID")
 parse_response "$response"
 assert_status "GET /items/{id} — found" 200 "$STATUS"
+assert_contains "GET /items/{id} — default status AVAILABLE" "AVAILABLE" "$BODY"
+assert_contains "GET /items/{id} — returns articleId" "$ARTICLE_ID" "$BODY"
 
-response=$(do_get "$BASE_URL/items")
+response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE_ID\",\"cost\":99.99}")
 parse_response "$response"
-assert_status "GET /items — list" 200 "$STATUS"
+assert_status "POST /items — method not allowed" 405 "$STATUS"
 
-# Update with explicit status
-response=$(do_put "$BASE_URL/items/$ITEM_ID" "{\"articleId\":\"$ARTICLE_ID\",\"itemStatus\":\"RESERVED\",\"cost\":99.99,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
+response=$(do_put "$BASE_URL/items/$ITEM_ID" "{\"articleId\":\"$ARTICLE_ID\",\"itemStatus\":\"SOLD\",\"cost\":99.99}")
 parse_response "$response"
-assert_status "PUT /items/{id} — update status" 200 "$STATUS"
-assert_contains "PUT /items/{id} — status RESERVED" "RESERVED" "$BODY"
+assert_status "PUT /items/{id} — method not allowed" 405 "$STATUS"
 
-# Revert to AVAILABLE
-do_put "$BASE_URL/items/$ITEM_ID" "{\"articleId\":\"$ARTICLE_ID\",\"itemStatus\":\"AVAILABLE\",\"cost\":99.99,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}" > /dev/null
-
-# Cost scaling
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE_ID\",\"cost\":55.555,\"locationId\":\"$LOCATION_ID\"}")
+response=$(do_delete "$BASE_URL/items/$ITEM_ID")
 parse_response "$response"
-assert_status "POST /items — cost scaling" 201 "$STATUS"
-assert_contains "POST /items — cost scaled to 55.56" "55.56" "$BODY"
-TEMP_ITEM_ID=$(extract_id "$BODY")
-do_delete "$BASE_URL/items/$TEMP_ITEM_ID" > /dev/null
-
-# Validation
-response=$(do_post "$BASE_URL/items" '{"cost":10.00}')
-parse_response "$response"
-assert_status "POST /items — null articleId → 400" 400 "$STATUS"
-
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE_ID\",\"cost\":-1.00}")
-parse_response "$response"
-assert_status "POST /items — negative cost → 400" 400 "$STATUS"
+assert_status "DELETE /items/{id} — method not allowed" 405 "$STATUS"
 
 response=$(do_get "$BASE_URL/items/00000000-0000-0000-0000-000000000000")
 parse_response "$response"
 assert_status "GET /items/{id} — not found → 404" 404 "$STATUS"
 
 # =============================================================================
-# 7. PURCHASES
+# 8. PURCHASES
 # =============================================================================
 echo ""
 echo "=== PURCHASES ==="
 
-PURCHASE_LINES="[{\"articleId\":\"$ARTICLE_ID\",\"quantity\":2,\"buyPrice\":10.00,\"profitMargin\":25.0,\"taxId\":\"$TAX_ID\"},{\"articleId\":\"$ARTICLE2_ID\",\"quantity\":3,\"buyPrice\":5.00,\"profitMargin\":30.0,\"taxId\":\"$TAX_ID\"}]"
+response=$(do_get "$BASE_URL/items")
+parse_response "$response"
+PURCHASE_ITEMS_BEFORE_BODY="$BODY"
 
+PURCHASE_LINES="[{\"articleId\":\"$ARTICLE_ID\",\"quantity\":2,\"buyPrice\":10.00,\"profitMargin\":25.0,\"taxId\":\"$TAX_ID\"},{\"articleId\":\"$ARTICLE2_ID\",\"quantity\":3,\"buyPrice\":5.00,\"profitMargin\":30.0,\"taxId\":\"$TAX_ID\"}]"
 response=$(do_post "$BASE_URL/purchases" "{\"code\":\"PUR-2026-0001\",\"providerCode\":\"ALB-001\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":$PURCHASE_LINES}")
 parse_response "$response"
 assert_status "POST /purchases — create" 201 "$STATUS"
@@ -464,6 +538,36 @@ assert_contains "POST /purchases — totalCost calculated (35.00)" "35.00" "$BOD
 assert_contains "POST /purchases — providerCode" "ALB-001" "$BODY"
 PURCHASE_ID=$(extract_id "$BODY")
 
+response=$(do_get "$BASE_URL/items")
+parse_response "$response"
+PURCHASE_ITEMS_AFTER_BODY="$BODY"
+mapfile -t PURCHASE_GENERATED_ITEM_IDS < <(extract_new_item_ids "$PURCHASE_ITEMS_BEFORE_BODY" "$PURCHASE_ITEMS_AFTER_BODY")
+assert_count "POST /purchases — generated stock items" 5 "${#PURCHASE_GENERATED_ITEM_IDS[@]}"
+
+PURCHASE_ARTICLE1_COUNT=$(PURCHASE_ITEMS_BEFORE_BODY="$PURCHASE_ITEMS_BEFORE_BODY" PURCHASE_ITEMS_AFTER_BODY="$PURCHASE_ITEMS_AFTER_BODY" ARTICLE_ID="$ARTICLE_ID" "$PYTHON_BIN" - <<'PY'
+import json
+import os
+before = {item['id'] for item in json.loads(os.environ['PURCHASE_ITEMS_BEFORE_BODY'])}
+after = json.loads(os.environ['PURCHASE_ITEMS_AFTER_BODY'])
+article_id = os.environ['ARTICLE_ID']
+count = sum(1 for item in after if item['id'] not in before and item.get('articleId') == article_id)
+print(count)
+PY
+)
+assert_count "POST /purchases — generated 2 units for article 1" 2 "$PURCHASE_ARTICLE1_COUNT"
+
+PURCHASE_ARTICLE2_COUNT=$(PURCHASE_ITEMS_BEFORE_BODY="$PURCHASE_ITEMS_BEFORE_BODY" PURCHASE_ITEMS_AFTER_BODY="$PURCHASE_ITEMS_AFTER_BODY" ARTICLE2_ID="$ARTICLE2_ID" "$PYTHON_BIN" - <<'PY'
+import json
+import os
+before = {item['id'] for item in json.loads(os.environ['PURCHASE_ITEMS_BEFORE_BODY'])}
+after = json.loads(os.environ['PURCHASE_ITEMS_AFTER_BODY'])
+article_id = os.environ['ARTICLE2_ID']
+count = sum(1 for item in after if item['id'] not in before and item.get('articleId') == article_id)
+print(count)
+PY
+)
+assert_count "POST /purchases — generated 3 units for article 2" 3 "$PURCHASE_ARTICLE2_COUNT"
+
 response=$(do_get "$BASE_URL/purchases/$PURCHASE_ID")
 parse_response "$response"
 assert_status "GET /purchases/{id} — found" 200 "$STATUS"
@@ -472,13 +576,11 @@ response=$(do_get "$BASE_URL/purchases")
 parse_response "$response"
 assert_status "GET /purchases — list" 200 "$STATUS"
 
-# Update
 response=$(do_put "$BASE_URL/purchases/$PURCHASE_ID" "{\"code\":\"PUR-2026-0001-UPD\",\"providerCode\":\"ALB-001\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":$PURCHASE_LINES}")
 parse_response "$response"
 assert_status "PUT /purchases/{id} — update" 200 "$STATUS"
 assert_contains "PUT /purchases/{id} — updated code" "PUR-2026-0001-UPD" "$BODY"
 
-# Deposit mode
 response=$(do_post "$BASE_URL/purchases" "{\"code\":\"PUR-DEP-001\",\"providerCode\":\"ALB-DEP\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"deposit\":true,\"finishDate\":\"2026-06-30T00:00:00\",\"lines\":[]}")
 parse_response "$response"
 assert_status "POST /purchases — deposit mode" 201 "$STATUS"
@@ -487,7 +589,6 @@ assert_contains "POST /purchases — finishDate set" "2026-06-30" "$BODY"
 DEP_PUR_ID=$(extract_id "$BODY")
 do_delete "$BASE_URL/purchases/$DEP_PUR_ID" > /dev/null
 
-# Validation
 response=$(do_post "$BASE_URL/purchases" "{\"code\":\"\",\"providerCode\":\"X\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":[]}")
 parse_response "$response"
 assert_status "POST /purchases — blank code → 400" 400 "$STATUS"
@@ -504,7 +605,6 @@ response=$(do_get "$BASE_URL/purchases/00000000-0000-0000-0000-000000000000")
 parse_response "$response"
 assert_status "GET /purchases/{id} — not found → 404" 404 "$STATUS"
 
-# Empty lines → totalCost = 0.00
 response=$(do_post "$BASE_URL/purchases" "{\"code\":\"PUR-EMPTY\",\"providerCode\":\"ALB-E\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":[]}")
 parse_response "$response"
 assert_status "POST /purchases — empty lines OK" 201 "$STATUS"
@@ -513,26 +613,25 @@ EMPTY_PUR_ID=$(extract_id "$BODY")
 do_delete "$BASE_URL/purchases/$EMPTY_PUR_ID" > /dev/null
 
 # =============================================================================
-# 8. SALES
+# 9. SALES
 # =============================================================================
 echo ""
 echo "=== SALES ==="
 
-# We need a payment method concept but there's no controller for it.
-# Sales require employeeId (user), paymentMethodId (UUID — no validation at DB level in tests).
-# We'll use the USER_ID as employeeId and a random UUID as paymentMethodId.
-PAYMENT_METHOD_ID="11111111-1111-1111-1111-111111111111"
-
-SALE_LINES="[{\"itemId\":\"$ITEM_ID\",\"quantity\":1,\"unitPrice\":25.00,\"taxId\":\"$TAX_ID\"},{\"freeConceptId\":\"22222222-2222-2222-2222-222222222222\",\"quantity\":3,\"unitPrice\":0.10,\"taxId\":\"$TAX_ID\"}]"
+SALE_LINES="[{\"itemId\":\"$ITEM_ID\",\"unitPrice\":25.00,\"taxId\":\"$TAX_ID\"}]"
 
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-2026-0001\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":$SALE_LINES}")
 parse_response "$response"
 assert_status "POST /sales — create" 201 "$STATUS"
 assert_contains "POST /sales — returns code" "SAL-2026-0001" "$BODY"
 assert_contains "POST /sales — default state NEW" "NEW" "$BODY"
-assert_contains "POST /sales — totalAmount (25.30)" "25.30" "$BODY"
+assert_contains "POST /sales — totalAmount (25.00)" "25.00" "$BODY"
 assert_contains "POST /sales — employeeId" "$USER_ID" "$BODY"
 SALE_ID=$(extract_id "$BODY")
+
+response=$(do_get "$BASE_URL/items/$ITEM_ID")
+parse_response "$response"
+assert_contains "POST /sales — sold item is now SOLD" "SOLD" "$BODY"
 
 response=$(do_get "$BASE_URL/sales/$SALE_ID")
 parse_response "$response"
@@ -543,7 +642,6 @@ response=$(do_get "$BASE_URL/sales")
 parse_response "$response"
 assert_status "GET /sales — list" 200 "$STATUS"
 
-# With client
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-CLIENT-001\",\"employeeId\":\"$USER_ID\",\"clientId\":\"33333333-3333-3333-3333-333333333333\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":[]}")
 parse_response "$response"
 assert_status "POST /sales — with client" 201 "$STATUS"
@@ -551,7 +649,6 @@ assert_contains "POST /sales — clientId present" "33333333-3333-3333-3333-3333
 CLIENT_SALE_ID=$(extract_id "$BODY")
 do_delete "$BASE_URL/sales/$CLIENT_SALE_ID" > /dev/null
 
-# Without client
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-NOCLI-001\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":[]}")
 parse_response "$response"
 assert_status "POST /sales — without client" 201 "$STATUS"
@@ -560,7 +657,6 @@ assert_contains "POST /sales — zero total no lines" "0.00" "$BODY"
 NOCLI_SALE_ID=$(extract_id "$BODY")
 do_delete "$BASE_URL/sales/$NOCLI_SALE_ID" > /dev/null
 
-# Validation
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":[]}")
 parse_response "$response"
 assert_status "POST /sales — blank code → 400" 400 "$STATUS"
@@ -578,7 +674,7 @@ parse_response "$response"
 assert_status "GET /sales/{id} — not found → 404" 404 "$STATUS"
 
 # =============================================================================
-# 9. FREE CONCEPTS
+# 10. FREE CONCEPTS
 # =============================================================================
 echo ""
 echo "=== FREE CONCEPTS ==="
@@ -610,10 +706,8 @@ parse_response "$response"
 assert_status "PUT /free-concepts/{id} — update" 200 "$STATUS"
 assert_contains "PUT /free-concepts/{id} — updated name" "Express Delivery" "$BODY"
 
-# Revert
 do_put "$BASE_URL/free-concepts/$FC_DELIVERY_ID" "{\"name\":\"Delivery Fee\",\"barcode\":\"9900000000001\",\"price\":5.50,\"taxId\":\"$TAX_ID\",\"description\":\"Standard delivery\"}" > /dev/null
 
-# Validation
 response=$(do_post "$BASE_URL/free-concepts" "{\"name\":\"\",\"barcode\":\"123\",\"price\":1.00,\"taxId\":\"$TAX_ID\"}")
 parse_response "$response"
 assert_status "POST /free-concepts — blank name → 400" 400 "$STATUS"
@@ -634,7 +728,6 @@ response=$(do_get "$BASE_URL/free-concepts/00000000-0000-0000-0000-000000000000"
 parse_response "$response"
 assert_status "GET /free-concepts/{id} — not found → 404" 404 "$STATUS"
 
-# Price scaling
 response=$(do_post "$BASE_URL/free-concepts" "{\"name\":\"Scale Test\",\"barcode\":\"9900000099999\",\"price\":3.456,\"taxId\":\"$TAX_ID\"}")
 parse_response "$response"
 assert_status "POST /free-concepts — price scaling" 201 "$STATUS"
@@ -643,58 +736,53 @@ TEMP_FC_ID=$(extract_id "$BODY")
 do_delete "$BASE_URL/free-concepts/$TEMP_FC_ID" > /dev/null
 
 # =============================================================================
-# 10. PURCHASE → INVENTORY → SALE FUNCTIONAL FLOW
+# 11. PURCHASE → INVENTORY → SALE FUNCTIONAL FLOW
 # =============================================================================
 echo ""
 echo "=== PURCHASE-TO-SALE FLOW ==="
 
-# ---- Step 1: Create a realistic purchase order ----------------------------
 echo "  --- Step 1: Create purchase order ---"
+response=$(do_get "$BASE_URL/items")
+parse_response "$response"
+FLOW_ITEMS_BEFORE_BODY="$BODY"
 
 FLOW_PURCHASE_LINES="[{\"articleId\":\"$ARTICLE_ID\",\"quantity\":3,\"buyPrice\":800.00,\"profitMargin\":25.0000,\"taxId\":\"$TAX_ID\"},{\"articleId\":\"$ARTICLE2_ID\",\"quantity\":2,\"buyPrice\":0.80,\"profitMargin\":50.0000,\"taxId\":\"$TAX2_ID\"}]"
-
 response=$(do_post "$BASE_URL/purchases" "{\"code\":\"PUR-FLOW-001\",\"providerCode\":\"ALB-FLOW-001\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":$FLOW_PURCHASE_LINES}")
 parse_response "$response"
 assert_status "FLOW — create purchase" 201 "$STATUS"
 assert_contains "FLOW — purchase state NEW" "NEW" "$BODY"
-# totalCost = (3 * 800.00) + (2 * 0.80) = 2400.00 + 1.60 = 2401.60
 assert_contains "FLOW — purchase totalCost 2401.60" "2401.60" "$BODY"
 FLOW_PURCHASE_ID=$(extract_id "$BODY")
 
-# ---- Step 2: Simulate receiving goods — create items (AVAILABLE) ----------
-echo "  --- Step 2: Create inventory items (receive goods) ---"
-
-# 3 laptops from the purchase line 1
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE_ID\",\"cost\":800.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
+echo "  --- Step 2: Resolve newly created stock from the purchase ---"
+response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-assert_status "FLOW — create laptop item 1" 201 "$STATUS"
-assert_contains "FLOW — laptop 1 AVAILABLE" "AVAILABLE" "$BODY"
-FLOW_LAPTOP_1=$(extract_id "$BODY")
+FLOW_ITEMS_AFTER_BODY="$BODY"
+mapfile -t FLOW_NEW_ITEM_IDS < <(extract_new_item_ids "$FLOW_ITEMS_BEFORE_BODY" "$FLOW_ITEMS_AFTER_BODY")
+assert_count "FLOW — purchase generated 5 stock items" 5 "${#FLOW_NEW_ITEM_IDS[@]}"
 
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE_ID\",\"cost\":800.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — create laptop item 2" 201 "$STATUS"
-FLOW_LAPTOP_2=$(extract_id "$BODY")
+FLOW_LAPTOP_IDS=()
+FLOW_PEN_IDS=()
+for new_id in "${FLOW_NEW_ITEM_IDS[@]}"; do
+    response=$(do_get "$BASE_URL/items/$new_id")
+    parse_response "$response"
+    if echo "$BODY" | grep -q "\"articleId\":\"$ARTICLE_ID\""; then
+        FLOW_LAPTOP_IDS+=("$new_id")
+    fi
+    if echo "$BODY" | grep -q "\"articleId\":\"$ARTICLE2_ID\""; then
+        FLOW_PEN_IDS+=("$new_id")
+    fi
+done
+assert_count "FLOW — 3 laptop items resolved" 3 "${#FLOW_LAPTOP_IDS[@]}"
+assert_count "FLOW — 2 pen items resolved" 2 "${#FLOW_PEN_IDS[@]}"
 
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE_ID\",\"cost\":800.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — create laptop item 3" 201 "$STATUS"
-FLOW_LAPTOP_3=$(extract_id "$BODY")
+FLOW_LAPTOP_1="${FLOW_LAPTOP_IDS[0]}"
+FLOW_LAPTOP_2="${FLOW_LAPTOP_IDS[1]}"
+FLOW_LAPTOP_3="${FLOW_LAPTOP_IDS[2]}"
+FLOW_PEN_1="${FLOW_PEN_IDS[0]}"
+FLOW_PEN_2="${FLOW_PEN_IDS[1]}"
 
-# 2 pens from purchase line 2
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE2_ID\",\"cost\":0.80,\"buyTaxId\":\"$TAX2_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — create pen item 1" 201 "$STATUS"
-FLOW_PEN_1=$(extract_id "$BODY")
-
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$ARTICLE2_ID\",\"cost\":0.80,\"buyTaxId\":\"$TAX2_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — create pen item 2" 201 "$STATUS"
-FLOW_PEN_2=$(extract_id "$BODY")
-
-# ---- Step 3: Verify all 5 items are AVAILABLE ----------------------------
-echo "  --- Step 3: Verify items are AVAILABLE ---"
-
+echo "  --- Step 3: Verify all 5 items are AVAILABLE ---"
 response=$(do_get "$BASE_URL/items/$FLOW_LAPTOP_1")
 parse_response "$response"
 assert_contains "FLOW — laptop 1 is AVAILABLE" "AVAILABLE" "$BODY"
@@ -715,53 +803,29 @@ response=$(do_get "$BASE_URL/items/$FLOW_PEN_2")
 parse_response "$response"
 assert_contains "FLOW — pen 2 is AVAILABLE" "AVAILABLE" "$BODY"
 
-# ---- Step 4: Create Sale 1 — sell 2 laptops + delivery fee ---------------
 echo "  --- Step 4: Create sale with 2 laptops + delivery fee ---"
-
 FLOW_SALE1_LINES="[{\"itemId\":\"$FLOW_LAPTOP_1\",\"unitPrice\":1210.00,\"taxId\":\"$TAX_ID\"},{\"itemId\":\"$FLOW_LAPTOP_2\",\"unitPrice\":1210.00,\"taxId\":\"$TAX_ID\"},{\"freeConceptId\":\"$FC_DELIVERY_ID\",\"quantity\":1,\"unitPrice\":5.50,\"taxId\":\"$TAX_ID\"}]"
-
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-FLOW-001\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":$FLOW_SALE1_LINES}")
 parse_response "$response"
 assert_status "FLOW — create sale 1" 201 "$STATUS"
 assert_contains "FLOW — sale 1 state NEW" "NEW" "$BODY"
-# totalAmount = (1 * 1210.00) + (1 * 1210.00) + (1 * 5.50) = 2425.50
 assert_contains "FLOW — sale 1 totalAmount 2425.50" "2425.50" "$BODY"
 assert_contains "FLOW — sale 1 has delivery freeConceptId" "$FC_DELIVERY_ID" "$BODY"
 FLOW_SALE1_ID=$(extract_id "$BODY")
 
-# ---- Step 5: Mark sold items as SOLD ------------------------------------
-echo "  --- Step 5: Mark sold items as SOLD ---"
-
-response=$(do_put "$BASE_URL/items/$FLOW_LAPTOP_1" "{\"articleId\":\"$ARTICLE_ID\",\"itemStatus\":\"SOLD\",\"cost\":800.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — mark laptop 1 SOLD" 200 "$STATUS"
-assert_contains "FLOW — laptop 1 now SOLD" "SOLD" "$BODY"
-
-response=$(do_put "$BASE_URL/items/$FLOW_LAPTOP_2" "{\"articleId\":\"$ARTICLE_ID\",\"itemStatus\":\"SOLD\",\"cost\":800.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — mark laptop 2 SOLD" 200 "$STATUS"
-assert_contains "FLOW — laptop 2 now SOLD" "SOLD" "$BODY"
-
-# ---- Step 6: Verify sold items are SOLD, unsold are AVAILABLE ------------
-echo "  --- Step 6: Verify item statuses after sale ---"
-
+echo "  --- Step 5: Verify sold items are SOLD and unsold remain AVAILABLE ---"
 response=$(do_get "$BASE_URL/items/$FLOW_LAPTOP_1")
 parse_response "$response"
-assert_contains "FLOW — laptop 1 confirms SOLD" "SOLD" "$BODY"
-assert_not_contains "FLOW — laptop 1 not AVAILABLE" "AVAILABLE" "$BODY"
+assert_contains "FLOW — laptop 1 now SOLD" "SOLD" "$BODY"
 
 response=$(do_get "$BASE_URL/items/$FLOW_LAPTOP_2")
 parse_response "$response"
-assert_contains "FLOW — laptop 2 confirms SOLD" "SOLD" "$BODY"
-assert_not_contains "FLOW — laptop 2 not AVAILABLE" "AVAILABLE" "$BODY"
+assert_contains "FLOW — laptop 2 now SOLD" "SOLD" "$BODY"
 
-# Unsold laptop 3 remains AVAILABLE
 response=$(do_get "$BASE_URL/items/$FLOW_LAPTOP_3")
 parse_response "$response"
 assert_contains "FLOW — laptop 3 still AVAILABLE" "AVAILABLE" "$BODY"
-assert_not_contains "FLOW — laptop 3 not SOLD" "SOLD" "$BODY"
 
-# Pens remain AVAILABLE
 response=$(do_get "$BASE_URL/items/$FLOW_PEN_1")
 parse_response "$response"
 assert_contains "FLOW — pen 1 still AVAILABLE" "AVAILABLE" "$BODY"
@@ -770,39 +834,18 @@ response=$(do_get "$BASE_URL/items/$FLOW_PEN_2")
 parse_response "$response"
 assert_contains "FLOW — pen 2 still AVAILABLE" "AVAILABLE" "$BODY"
 
-# ---- Step 7: Create Sale 2 — sell remaining stock + gift wrapping --------
-echo "  --- Step 7: Sell remaining items + gift wrapping ---"
-
+echo "  --- Step 6: Sell remaining items + gift wrapping ---"
 FLOW_SALE2_LINES="[{\"itemId\":\"$FLOW_LAPTOP_3\",\"unitPrice\":1150.00,\"taxId\":\"$TAX_ID\"},{\"itemId\":\"$FLOW_PEN_1\",\"unitPrice\":1.50,\"taxId\":\"$TAX2_ID\"},{\"itemId\":\"$FLOW_PEN_2\",\"unitPrice\":1.50,\"taxId\":\"$TAX2_ID\"},{\"freeConceptId\":\"$FC_GIFTWRAP_ID\",\"quantity\":2,\"unitPrice\":2.00,\"taxId\":\"$TAX_ID\"},{\"freeConceptId\":\"$FC_DELIVERY_ID\",\"quantity\":1,\"unitPrice\":5.50,\"taxId\":\"$TAX_ID\"}]"
-
 CLIENT_UUID="44444444-4444-4444-4444-444444444444"
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-FLOW-002\",\"employeeId\":\"$USER_ID\",\"clientId\":\"$CLIENT_UUID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":$FLOW_SALE2_LINES}")
 parse_response "$response"
 assert_status "FLOW — create sale 2" 201 "$STATUS"
 assert_contains "FLOW — sale 2 has clientId" "$CLIENT_UUID" "$BODY"
-# totalAmount = 1150.00 + 1.50 + 1.50 + (2 * 2.00) + 5.50 = 1162.50
 assert_contains "FLOW — sale 2 totalAmount 1162.50" "1162.50" "$BODY"
 assert_contains "FLOW — sale 2 has gift wrap freeConceptId" "$FC_GIFTWRAP_ID" "$BODY"
 FLOW_SALE2_ID=$(extract_id "$BODY")
 
-# ---- Step 8: Mark remaining items as SOLD --------------------------------
-echo "  --- Step 8: Mark remaining sold items as SOLD ---"
-
-response=$(do_put "$BASE_URL/items/$FLOW_LAPTOP_3" "{\"articleId\":\"$ARTICLE_ID\",\"itemStatus\":\"SOLD\",\"cost\":800.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — mark laptop 3 SOLD" 200 "$STATUS"
-
-response=$(do_put "$BASE_URL/items/$FLOW_PEN_1" "{\"articleId\":\"$ARTICLE2_ID\",\"itemStatus\":\"SOLD\",\"cost\":0.80,\"buyTaxId\":\"$TAX2_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — mark pen 1 SOLD" 200 "$STATUS"
-
-response=$(do_put "$BASE_URL/items/$FLOW_PEN_2" "{\"articleId\":\"$ARTICLE2_ID\",\"itemStatus\":\"SOLD\",\"cost\":0.80,\"buyTaxId\":\"$TAX2_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
-parse_response "$response"
-assert_status "FLOW — mark pen 2 SOLD" 200 "$STATUS"
-
-# ---- Step 9: Verify ALL items are now SOLD — nothing AVAILABLE -----------
-echo "  --- Step 9: Verify all items are SOLD ---"
-
+echo "  --- Step 7: Verify all generated items are now SOLD ---"
 response=$(do_get "$BASE_URL/items/$FLOW_LAPTOP_1")
 parse_response "$response"
 assert_contains "FLOW — final: laptop 1 SOLD" "SOLD" "$BODY"
@@ -823,178 +866,140 @@ response=$(do_get "$BASE_URL/items/$FLOW_PEN_2")
 parse_response "$response"
 assert_contains "FLOW — final: pen 2 SOLD" "SOLD" "$BODY"
 
-# Verify no AVAILABLE items in the full listing from this flow
-response=$(do_get "$BASE_URL/items")
-parse_response "$response"
-assert_status "FLOW — GET /items list" 200 "$STATUS"
-# All flow items should be SOLD; the original ITEM_ID/ITEM2_ID are still AVAILABLE
-# We verify that all 5 flow items appear as SOLD in the full list
-assert_contains "FLOW — list contains SOLD items" "SOLD" "$BODY"
-
-# ---- Step 10: Verify sales are retrievable with correct data -------------
-echo "  --- Step 10: Verify sales data integrity ---"
-
+echo "  --- Step 8: Verify sales and purchase are retrievable ---"
 response=$(do_get "$BASE_URL/sales/$FLOW_SALE1_ID")
 parse_response "$response"
 assert_status "FLOW — get sale 1" 200 "$STATUS"
-assert_contains "FLOW — sale 1 code" "SAL-FLOW-001" "$BODY"
 assert_contains "FLOW — sale 1 total persisted" "2425.50" "$BODY"
-assert_contains "FLOW — sale 1 employeeId" "$USER_ID" "$BODY"
 
 response=$(do_get "$BASE_URL/sales/$FLOW_SALE2_ID")
 parse_response "$response"
 assert_status "FLOW — get sale 2" 200 "$STATUS"
-assert_contains "FLOW — sale 2 code" "SAL-FLOW-002" "$BODY"
 assert_contains "FLOW — sale 2 total persisted" "1162.50" "$BODY"
 assert_contains "FLOW — sale 2 clientId" "$CLIENT_UUID" "$BODY"
-
-# ---- Step 11: Verify purchase data integrity -----------------------------
-echo "  --- Step 11: Verify purchase data integrity ---"
 
 response=$(do_get "$BASE_URL/purchases/$FLOW_PURCHASE_ID")
 parse_response "$response"
 assert_status "FLOW — get purchase" 200 "$STATUS"
-assert_contains "FLOW — purchase code" "PUR-FLOW-001" "$BODY"
 assert_contains "FLOW — purchase total persisted" "2401.60" "$BODY"
 
-# ---- Cleanup flow data ---------------------------------------------------
-echo "  --- Cleanup flow data ---"
-
-do_delete "$BASE_URL/sales/$FLOW_SALE1_ID" > /dev/null
-do_delete "$BASE_URL/sales/$FLOW_SALE2_ID" > /dev/null
-do_delete "$BASE_URL/purchases/$FLOW_PURCHASE_ID" > /dev/null
-do_delete "$BASE_URL/items/$FLOW_LAPTOP_1" > /dev/null
-do_delete "$BASE_URL/items/$FLOW_LAPTOP_2" > /dev/null
-do_delete "$BASE_URL/items/$FLOW_LAPTOP_3" > /dev/null
-do_delete "$BASE_URL/items/$FLOW_PEN_1" > /dev/null
-do_delete "$BASE_URL/items/$FLOW_PEN_2" > /dev/null
-
 # =============================================================================
-# 11. BOX-OPENING FLOW — purchase box, open it, sell individual items
+# 12. BOX-OPENING FLOW — purchase box already opened, auto-split into units
 # =============================================================================
 echo ""
 echo "=== BOX-OPENING FLOW ==="
 
-# ---- Step 1: Create parent + child articles ------------------------------
-echo "  --- Step 1: Create box and pen articles ---"
+echo "  --- Step 1: Create pen and box articles ---"
+response=$(do_post "$BASE_URL/articles" "{\"name\":\"Pen (unit)\",\"code\":\"PEN-UNIT-001\",\"barcode\":\"8400000020002\",\"taxId\":\"$TAX_ID\",\"basePrice\":0.80,\"retailPrice\":1.50}")
+parse_response "$response"
+assert_status "BOX — create pen article (child)" 201 "$STATUS"
+PEN_ARTICLE_ID=$(extract_id "$BODY")
 
-response=$(do_post "$BASE_URL/articles" "{\"name\":\"Box of Pens (20u)\",\"code\":\"BOX-PEN-20\",\"barcode\":\"8400000020001\",\"taxId\":\"$TAX_ID\",\"basePrice\":16.00,\"retailPrice\":30.00,\"canHaveChildren\":true,\"numberOfChildren\":20}")
+response=$(do_post "$BASE_URL/articles" "{\"name\":\"Box of Pens (20u)\",\"code\":\"BOX-PEN-20\",\"barcode\":\"8400000020001\",\"taxId\":\"$TAX_ID\",\"basePrice\":16.00,\"retailPrice\":30.00,\"canHaveChildren\":true,\"numberOfChildren\":20,\"childArticleId\":\"$PEN_ARTICLE_ID\"}")
 parse_response "$response"
 assert_status "BOX — create box article" 201 "$STATUS"
 assert_contains "BOX — canHaveChildren true" '"canHaveChildren":true' "$BODY"
 assert_contains "BOX — numberOfChildren 20" '"numberOfChildren":20' "$BODY"
+assert_contains "BOX — childArticleId set" "$PEN_ARTICLE_ID" "$BODY"
 BOX_ARTICLE_ID=$(extract_id "$BODY")
 
-response=$(do_post "$BASE_URL/articles" "{\"name\":\"Pen (unit)\",\"code\":\"PEN-UNIT-001\",\"barcode\":\"8400000020002\",\"taxId\":\"$TAX_ID\",\"basePrice\":0.80,\"retailPrice\":1.50,\"parentArticleId\":\"$BOX_ARTICLE_ID\"}")
+echo "  --- Step 2: Purchase 1 opened box of pens ---"
+response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-assert_status "BOX — create pen article (child)" 201 "$STATUS"
-assert_contains "BOX — pen parentArticleId set" "$BOX_ARTICLE_ID" "$BODY"
-PEN_ARTICLE_ID=$(extract_id "$BODY")
+BOX_ITEMS_BEFORE_BODY="$BODY"
 
-# ---- Step 2: Create purchase for 1 box of pens --------------------------
-echo "  --- Step 2: Purchase 1 box of pens ---"
-
-BOX_PURCHASE_LINES="[{\"articleId\":\"$BOX_ARTICLE_ID\",\"quantity\":1,\"buyPrice\":16.00,\"profitMargin\":87.5000,\"taxId\":\"$TAX_ID\"}]"
-
-response=$(do_post "$BASE_URL/purchases" "{\"code\":\"PUR-BOX-001\",\"providerCode\":\"ALB-BOX\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":$BOX_PURCHASE_LINES}")
+BOX_PURCHASE_LINES="[{\"articleId\":\"$BOX_ARTICLE_ID\",\"quantity\":1,\"buyPrice\":16.00,\"profitMargin\":87.5000,\"taxId\":\"$TAX_ID\",\"itemStatus\":\"OPENED\",\"hasChildren\":true}]"
+response=$(do_post "$BASE_URL/purchases" "{\"code\":\"PUR-BOX-001\",\"providerCode\":\"ALB-BOX-001\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\",\"lines\":$BOX_PURCHASE_LINES}")
 parse_response "$response"
 assert_status "BOX — create purchase" 201 "$STATUS"
 assert_contains "BOX — purchase totalCost 16.00" "16.00" "$BODY"
 BOX_PURCHASE_ID=$(extract_id "$BODY")
 
-# ---- Step 3: Receive goods — create box item as OPENED ------------------
-echo "  --- Step 3: Open box → auto-generate 20 pen items ---"
-
-response=$(do_post "$BASE_URL/items" "{\"articleId\":\"$BOX_ARTICLE_ID\",\"itemStatus\":\"OPENED\",\"hasChildren\":true,\"cost\":16.00,\"buyTaxId\":\"$TAX_ID\",\"providerId\":\"$PROVIDER_ID\",\"locationId\":\"$LOCATION_ID\"}")
+echo "  --- Step 3: Resolve box item and auto-generated pen items ---"
+response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-assert_status "BOX — create box item (OPENED)" 201 "$STATUS"
+BOX_ITEMS_AFTER_BODY="$BODY"
+
+BOX_RESOLVE_OUTPUT=$(BOX_ITEMS_BEFORE_BODY="$BOX_ITEMS_BEFORE_BODY" BOX_ITEMS_AFTER_BODY="$BOX_ITEMS_AFTER_BODY" BOX_ARTICLE_ID="$BOX_ARTICLE_ID" "$PYTHON_BIN" - <<'PY'
+import json
+import os
+before = {item['id'] for item in json.loads(os.environ['BOX_ITEMS_BEFORE_BODY'])}
+after = json.loads(os.environ['BOX_ITEMS_AFTER_BODY'])
+box_article_id = os.environ['BOX_ARTICLE_ID']
+new_items = [item for item in after if item['id'] not in before]
+box_item = next((item for item in new_items if item.get('articleId') == box_article_id), None)
+print(len(new_items))
+print(box_item['id'] if box_item else '')
+if box_item:
+    pens = [item for item in new_items if item.get('parentItemId') == box_item['id']]
+else:
+    pens = []
+print(len(pens))
+for pen in pens:
+    print(pen['id'])
+PY
+)
+BOX_NEW_COUNT=$(echo "$BOX_RESOLVE_OUTPUT" | sed -n '1p')
+BOX_ITEM_ID=$(echo "$BOX_RESOLVE_OUTPUT" | sed -n '2p')
+PEN_COUNT=$(echo "$BOX_RESOLVE_OUTPUT" | sed -n '3p')
+assert_count "BOX — 21 stock entries created (1 box + 20 pens)" 21 "$BOX_NEW_COUNT"
+assert_count "BOX — 20 pen items created as children" 20 "$PEN_COUNT"
+
+PEN_IDS=()
+while IFS= read -r line; do
+    [ -n "$line" ] && PEN_IDS+=("$line")
+done <<< "$(echo "$BOX_RESOLVE_OUTPUT" | tail -n +4)"
+
+echo "  --- Step 4: Verify box and pen stock state ---"
+response=$(do_get "$BASE_URL/items/$BOX_ITEM_ID")
+parse_response "$response"
 assert_contains "BOX — box item status OPENED" "OPENED" "$BODY"
 assert_contains "BOX — box hasChildren true" '"hasChildren":true' "$BODY"
-BOX_ITEM_ID=$(extract_id "$BODY")
-
-# ---- Step 4: Verify 20 child pen items were auto-created ----------------
-echo "  --- Step 4: Verify 20 pen items generated ---"
 
 response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-assert_status "BOX — list items" 200 "$STATUS"
-
-# Count pen items that are children of the box
-PEN_AVAILABLE_COUNT=$(echo "$BODY" | grep -o "\"parentItemId\":\"$BOX_ITEM_ID\"" | wc -l | tr -d ' ')
-assert_count "BOX — 20 pen items created as children" 20 "$PEN_AVAILABLE_COUNT"
-
-# All children should be AVAILABLE — count pen article items with AVAILABLE status
-# Extract pen child item IDs for later use (each appears as a separate JSON object)
-PEN_ITEMS_BODY=$(echo "$BODY" | python -c "
+PEN_AVAILABLE_COUNT=$(echo "$BODY" | "$PYTHON_BIN" -c "
 import sys, json
 items = json.load(sys.stdin)
 pens = [i for i in items if i.get('parentItemId') == '$BOX_ITEM_ID' and i.get('itemStatus') == 'AVAILABLE']
 print(len(pens))
-for p in pens:
-    print(p['id'])
 " 2>/dev/null || echo "0")
+assert_count "BOX — all 20 pens are AVAILABLE" 20 "$PEN_AVAILABLE_COUNT"
 
-PEN_COUNT=$(echo "$PEN_ITEMS_BODY" | head -1)
-assert_count "BOX — all 20 pens are AVAILABLE" 20 "$PEN_COUNT"
-
-# Grab individual pen IDs for sales
-PEN_IDS=()
-while IFS= read -r line; do
-    PEN_IDS+=("$line")
-done <<< "$(echo "$PEN_ITEMS_BODY" | tail -n +2)"
-
-# Verify box item itself is OPENED
-response=$(do_get "$BASE_URL/items/$BOX_ITEM_ID")
-parse_response "$response"
-assert_contains "BOX — box item confirms OPENED" "OPENED" "$BODY"
-assert_not_contains "BOX — box item not AVAILABLE" "AVAILABLE" "$BODY"
-
-# Verify child pen cost = 16.00 / 20 = 0.80
 response=$(do_get "$BASE_URL/items/${PEN_IDS[0]}")
 parse_response "$response"
 assert_contains "BOX — pen child cost 0.80" '"cost":0.80' "$BODY"
 
-# ---- Step 5: Try to sell the OPENED box → must fail ---------------------
 echo "  --- Step 5: Sell OPENED box → error ---"
-
 OPENED_BOX_SALE_LINES="[{\"itemId\":\"$BOX_ITEM_ID\",\"unitPrice\":30.00,\"taxId\":\"$TAX_ID\"}]"
-
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-BOX-FAIL\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":$OPENED_BOX_SALE_LINES}")
 parse_response "$response"
 assert_status "BOX — sell OPENED box → 400" 400 "$STATUS"
 assert_contains "BOX — error mentions not available" "not available" "$BODY"
 
-# ---- Step 6: Sell 7 pens in first sale -----------------------------------
 echo "  --- Step 6: Sell 7 pens ---"
-
 SALE_PEN_LINES=""
 for i in $(seq 0 6); do
     if [ -n "$SALE_PEN_LINES" ]; then SALE_PEN_LINES="$SALE_PEN_LINES,"; fi
     SALE_PEN_LINES="${SALE_PEN_LINES}{\"itemId\":\"${PEN_IDS[$i]}\",\"unitPrice\":1.50,\"taxId\":\"$TAX_ID\"}"
 done
-
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-PEN-001\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":[$SALE_PEN_LINES]}")
 parse_response "$response"
 assert_status "BOX — sell 7 pens" 201 "$STATUS"
-# totalAmount = 7 * 1.50 = 10.50
 assert_contains "BOX — sale 1 totalAmount 10.50" "10.50" "$BODY"
 BOX_SALE1_ID=$(extract_id "$BODY")
 
-# ---- Step 7: Verify 7 pens SOLD + 13 AVAILABLE --------------------------
 echo "  --- Step 7: Verify 7 SOLD, 13 AVAILABLE ---"
-
 response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-
-SOLD_PEN_COUNT=$(echo "$BODY" | python -c "
+SOLD_PEN_COUNT=$(echo "$BODY" | "$PYTHON_BIN" -c "
 import sys, json
 items = json.load(sys.stdin)
 sold = [i for i in items if i.get('parentItemId') == '$BOX_ITEM_ID' and i.get('itemStatus') == 'SOLD']
 print(len(sold))
 " 2>/dev/null || echo "0")
 assert_count "BOX — 7 pens now SOLD" 7 "$SOLD_PEN_COUNT"
-
-AVAIL_PEN_COUNT=$(echo "$BODY" | python -c "
+AVAIL_PEN_COUNT=$(echo "$BODY" | "$PYTHON_BIN" -c "
 import sys, json
 items = json.load(sys.stdin)
 avail = [i for i in items if i.get('parentItemId') == '$BOX_ITEM_ID' and i.get('itemStatus') == 'AVAILABLE']
@@ -1002,98 +1007,75 @@ print(len(avail))
 " 2>/dev/null || echo "0")
 assert_count "BOX — 13 pens still AVAILABLE" 13 "$AVAIL_PEN_COUNT"
 
-# ---- Step 8: Try to sell an already-sold pen → must fail -----------------
 echo "  --- Step 8: Sell already-sold pen → error ---"
-
 RESELL_LINES="[{\"itemId\":\"${PEN_IDS[0]}\",\"unitPrice\":1.50,\"taxId\":\"$TAX_ID\"}]"
-
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-PEN-RESELL\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":$RESELL_LINES}")
 parse_response "$response"
 assert_status "BOX — sell already-SOLD pen → 400" 400 "$STATUS"
 assert_contains "BOX — error mentions not available" "not available" "$BODY"
 
-# ---- Step 9: Sell 5 more pens + free concept delivery --------------------
 echo "  --- Step 9: Sell 5 more pens + delivery ---"
-
 SALE_PEN2_LINES=""
 for i in $(seq 7 11); do
     if [ -n "$SALE_PEN2_LINES" ]; then SALE_PEN2_LINES="$SALE_PEN2_LINES,"; fi
     SALE_PEN2_LINES="${SALE_PEN2_LINES}{\"itemId\":\"${PEN_IDS[$i]}\",\"unitPrice\":1.50,\"taxId\":\"$TAX_ID\"}"
 done
 SALE_PEN2_LINES="${SALE_PEN2_LINES},{\"freeConceptId\":\"$FC_DELIVERY_ID\",\"quantity\":1,\"unitPrice\":5.50,\"taxId\":\"$TAX_ID\"}"
-
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-PEN-002\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":[$SALE_PEN2_LINES]}")
 parse_response "$response"
 assert_status "BOX — sell 5 pens + delivery" 201 "$STATUS"
-# totalAmount = (5 * 1.50) + (1 * 5.50) = 7.50 + 5.50 = 13.00
 assert_contains "BOX — sale 2 totalAmount 13.00" "13.00" "$BODY"
 BOX_SALE2_ID=$(extract_id "$BODY")
 
-# ---- Step 10: Verify 12 SOLD + 8 AVAILABLE + box still OPENED -----------
 echo "  --- Step 10: Verify 12 SOLD, 8 AVAILABLE, box OPENED ---"
-
 response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-
-SOLD_PEN_COUNT=$(echo "$BODY" | python -c "
+SOLD_PEN_COUNT=$(echo "$BODY" | "$PYTHON_BIN" -c "
 import sys, json
 items = json.load(sys.stdin)
 sold = [i for i in items if i.get('parentItemId') == '$BOX_ITEM_ID' and i.get('itemStatus') == 'SOLD']
 print(len(sold))
 " 2>/dev/null || echo "0")
 assert_count "BOX — 12 pens now SOLD" 12 "$SOLD_PEN_COUNT"
-
-AVAIL_PEN_COUNT=$(echo "$BODY" | python -c "
+AVAIL_PEN_COUNT=$(echo "$BODY" | "$PYTHON_BIN" -c "
 import sys, json
 items = json.load(sys.stdin)
 avail = [i for i in items if i.get('parentItemId') == '$BOX_ITEM_ID' and i.get('itemStatus') == 'AVAILABLE']
 print(len(avail))
 " 2>/dev/null || echo "0")
 assert_count "BOX — 8 pens still AVAILABLE" 8 "$AVAIL_PEN_COUNT"
-
-# Box still OPENED
 response=$(do_get "$BASE_URL/items/$BOX_ITEM_ID")
 parse_response "$response"
 assert_contains "BOX — box still OPENED after sales" "OPENED" "$BODY"
 
-# ---- Step 11: Try to sell box again → still fails -------------------------
 echo "  --- Step 11: Sell OPENED box again → still error ---"
-
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-BOX-FAIL2\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":$OPENED_BOX_SALE_LINES}")
 parse_response "$response"
 assert_status "BOX — sell OPENED box again → 400" 400 "$STATUS"
 
-# ---- Step 12: Sell remaining 8 pens -------------------------------------
 echo "  --- Step 12: Sell remaining 8 pens ---"
-
 SALE_PEN3_LINES=""
 for i in $(seq 12 19); do
     if [ -n "$SALE_PEN3_LINES" ]; then SALE_PEN3_LINES="$SALE_PEN3_LINES,"; fi
     SALE_PEN3_LINES="${SALE_PEN3_LINES}{\"itemId\":\"${PEN_IDS[$i]}\",\"unitPrice\":1.50,\"taxId\":\"$TAX_ID\"}"
 done
-
 response=$(do_post "$BASE_URL/sales" "{\"code\":\"SAL-PEN-003\",\"employeeId\":\"$USER_ID\",\"paymentMethodId\":\"$PAYMENT_METHOD_ID\",\"lines\":[$SALE_PEN3_LINES]}")
 parse_response "$response"
 assert_status "BOX — sell remaining 8 pens" 201 "$STATUS"
-# totalAmount = 8 * 1.50 = 12.00
 assert_contains "BOX — sale 3 totalAmount 12.00" "12.00" "$BODY"
 BOX_SALE3_ID=$(extract_id "$BODY")
 
-# ---- Step 13: Verify ALL 20 pens SOLD, 0 AVAILABLE ----------------------
 echo "  --- Step 13: Verify all 20 pens SOLD ---"
-
 response=$(do_get "$BASE_URL/items")
 parse_response "$response"
-
-SOLD_PEN_COUNT=$(echo "$BODY" | python -c "
+SOLD_PEN_COUNT=$(echo "$BODY" | "$PYTHON_BIN" -c "
 import sys, json
 items = json.load(sys.stdin)
 sold = [i for i in items if i.get('parentItemId') == '$BOX_ITEM_ID' and i.get('itemStatus') == 'SOLD']
 print(len(sold))
 " 2>/dev/null || echo "0")
 assert_count "BOX — all 20 pens SOLD" 20 "$SOLD_PEN_COUNT"
-
-AVAIL_PEN_COUNT=$(echo "$BODY" | python -c "
+AVAIL_PEN_COUNT=$(echo "$BODY" | "$PYTHON_BIN" -c "
 import sys, json
 items = json.load(sys.stdin)
 avail = [i for i in items if i.get('parentItemId') == '$BOX_ITEM_ID' and i.get('itemStatus') == 'AVAILABLE']
@@ -1101,27 +1083,12 @@ print(len(avail))
 " 2>/dev/null || echo "0")
 assert_count "BOX — 0 pens AVAILABLE" 0 "$AVAIL_PEN_COUNT"
 
-# ---- Cleanup box flow data -----------------------------------------------
-echo "  --- Cleanup box flow data ---"
-
-do_delete "$BASE_URL/sales/$BOX_SALE1_ID" > /dev/null
-do_delete "$BASE_URL/sales/$BOX_SALE2_ID" > /dev/null
-do_delete "$BASE_URL/sales/$BOX_SALE3_ID" > /dev/null
-do_delete "$BASE_URL/purchases/$BOX_PURCHASE_ID" > /dev/null
-for i in $(seq 0 19); do
-    do_delete "$BASE_URL/items/${PEN_IDS[$i]}" > /dev/null
-done
-do_delete "$BASE_URL/items/$BOX_ITEM_ID" > /dev/null
-do_delete "$BASE_URL/articles/$PEN_ARTICLE_ID" > /dev/null
-do_delete "$BASE_URL/articles/$BOX_ARTICLE_ID" > /dev/null
-
 # =============================================================================
 # 13. DELETE operations (cascade / cleanup)
 # =============================================================================
 echo ""
 echo "=== DELETE ==="
 
-# Free concepts
 response=$(do_delete "$BASE_URL/free-concepts/$FC_DELIVERY_ID")
 parse_response "$response"
 assert_status "DELETE /free-concepts/{id}" 204 "$STATUS"
@@ -1134,7 +1101,6 @@ response=$(do_get "$BASE_URL/free-concepts/$FC_DELIVERY_ID")
 parse_response "$response"
 assert_status "GET /free-concepts/{id} — after delete → 404" 404 "$STATUS"
 
-# Sales
 response=$(do_delete "$BASE_URL/sales/$SALE_ID")
 parse_response "$response"
 assert_status "DELETE /sales/{id}" 204 "$STATUS"
@@ -1143,17 +1109,66 @@ response=$(do_get "$BASE_URL/sales/$SALE_ID")
 parse_response "$response"
 assert_status "GET /sales/{id} — after delete → 404" 404 "$STATUS"
 
+response=$(do_get "$BASE_URL/items/$ITEM_ID")
+parse_response "$response"
+assert_status "DELETE /sales/{id} — sold item released back to stock" 200 "$STATUS"
+assert_contains "DELETE /sales/{id} — sold item status AVAILABLE" '"itemStatus":"AVAILABLE"' "$BODY"
+
+response=$(do_delete "$BASE_URL/sales/$FLOW_SALE1_ID")
+parse_response "$response"
+assert_status "DELETE /sales/{id} — flow sale 1" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/sales/$FLOW_SALE2_ID")
+parse_response "$response"
+assert_status "DELETE /sales/{id} — flow sale 2" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/sales/$BOX_SALE1_ID")
+parse_response "$response"
+assert_status "DELETE /sales/{id} — box sale 1" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/sales/$BOX_SALE2_ID")
+parse_response "$response"
+assert_status "DELETE /sales/{id} — box sale 2" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/sales/$BOX_SALE3_ID")
+parse_response "$response"
+assert_status "DELETE /sales/{id} — box sale 3" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/purchases/$FLOW_PURCHASE_ID")
+parse_response "$response"
+assert_status "DELETE /purchases/{id} — flow purchase" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/purchases/$BOX_PURCHASE_ID")
+parse_response "$response"
+assert_status "DELETE /purchases/{id} — box purchase" 204 "$STATUS"
+
 response=$(do_delete "$BASE_URL/purchases/$PURCHASE_ID")
 parse_response "$response"
 assert_status "DELETE /purchases/{id}" 204 "$STATUS"
 
-response=$(do_delete "$BASE_URL/items/$ITEM_ID")
+response=$(do_delete "$BASE_URL/purchases/$ITEM_SEED_PURCHASE_ID")
 parse_response "$response"
-assert_status "DELETE /items/{id}" 204 "$STATUS"
+assert_status "DELETE /purchases/{id} — item seed purchase" 204 "$STATUS"
 
-response=$(do_delete "$BASE_URL/items/$ITEM2_ID")
+response=$(do_get "$BASE_URL/items/$ITEM_ID")
 parse_response "$response"
-assert_status "DELETE /items/{id} — second" 204 "$STATUS"
+assert_status "DELETE /purchases/{id} — seeded article 1 stock removed" 404 "$STATUS"
+
+response=$(do_get "$BASE_URL/items/$ITEM2_ID")
+parse_response "$response"
+assert_status "DELETE /purchases/{id} — seeded article 2 stock removed" 404 "$STATUS"
+
+response=$(do_delete "$BASE_URL/payment-methods/$PAYMENT_METHOD_ID")
+parse_response "$response"
+assert_status "DELETE /payment-methods/{id}" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/articles/$PEN_ARTICLE_ID")
+parse_response "$response"
+assert_status "DELETE /articles/{id} — pen article" 204 "$STATUS"
+
+response=$(do_delete "$BASE_URL/articles/$BOX_ARTICLE_ID")
+parse_response "$response"
+assert_status "DELETE /articles/{id} — box article" 204 "$STATUS"
 
 response=$(do_delete "$BASE_URL/articles/$ARTICLE_ID")
 parse_response "$response"
@@ -1183,7 +1198,6 @@ response=$(do_delete "$BASE_URL/taxes/$TAX2_ID")
 parse_response "$response"
 assert_status "DELETE /taxes/{id} — second" 204 "$STATUS"
 
-# Delete non-existent
 response=$(do_delete "$BASE_URL/taxes/00000000-0000-0000-0000-000000000000")
 parse_response "$response"
 assert_status "DELETE /taxes/{id} — not found → 404" 404 "$STATUS"

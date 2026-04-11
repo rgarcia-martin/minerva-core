@@ -2,13 +2,13 @@ package com.fractalmindstudio.minerva_core.catalog.article.application;
 
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
+import com.fractalmindstudio.minerva_core.catalog.tax.domain.TaxRepository;
 import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,11 +18,17 @@ import java.util.UUID;
 public class ArticleService {
 
     public static final String RESOURCE_NAME = "article";
+    public static final String TAX_RESOURCE_NAME = "tax";
 
     private final ArticleRepository articleRepository;
+    private final TaxRepository taxRepository;
 
-    public ArticleService(final ArticleRepository articleRepository) {
+    public ArticleService(
+            final ArticleRepository articleRepository,
+            final TaxRepository taxRepository
+    ) {
         this.articleRepository = articleRepository;
+        this.taxRepository = taxRepository;
     }
 
     @Transactional
@@ -37,9 +43,10 @@ public class ArticleService {
             final BigDecimal retailPrice,
             final boolean canHaveChildren,
             final int numberOfChildren,
-            final UUID parentArticleId
+            final UUID childArticleId
     ) {
-        log.debug("Creating new Article");
+        log.debug("Creating new article");
+        validateReferences(taxId, childArticleId);
         return articleRepository.save(Article.create(
                 name,
                 code,
@@ -51,7 +58,7 @@ public class ArticleService {
                 retailPrice,
                 canHaveChildren,
                 numberOfChildren,
-                parentArticleId
+                childArticleId
         ));
     }
 
@@ -62,9 +69,7 @@ public class ArticleService {
 
     public List<Article> findAll() {
         log.debug("findAll");
-        return articleRepository.findAll().stream()
-                .sorted(Comparator.comparing(Article::name).thenComparing(Article::code))
-                .toList();
+        return articleRepository.findAll();
     }
 
     @Transactional
@@ -80,10 +85,11 @@ public class ArticleService {
             final BigDecimal retailPrice,
             final boolean canHaveChildren,
             final int numberOfChildren,
-            final UUID parentArticleId
+            final UUID childArticleId
     ) {
         log.debug("update article {}", id);
         getById(id);
+        validateReferences(taxId, childArticleId);
         return articleRepository.save(new Article(
                 id,
                 name,
@@ -96,7 +102,7 @@ public class ArticleService {
                 retailPrice,
                 canHaveChildren,
                 numberOfChildren,
-                parentArticleId
+                childArticleId
         ));
     }
 
@@ -105,5 +111,14 @@ public class ArticleService {
         log.debug("delete article {}", id);
         getById(id);
         articleRepository.deleteById(id);
+    }
+
+    private void validateReferences(final UUID taxId, final UUID childArticleId) {
+        if (taxRepository.findById(taxId).isEmpty()) {
+            throw new NotFoundException(TAX_RESOURCE_NAME, taxId);
+        }
+        if (childArticleId != null && articleRepository.findById(childArticleId).isEmpty()) {
+            throw new NotFoundException(RESOURCE_NAME, childArticleId);
+        }
     }
 }

@@ -30,7 +30,7 @@ public class LocationRepositoryAdapter implements LocationRepository {
 
     @Override
     public List<Location> findAll() {
-        return springDataLocationRepository.findAll().stream().map(this::toDomain).toList();
+        return springDataLocationRepository.findAllByOrderByNameAsc().stream().map(this::toDomain).toList();
     }
 
     @Override

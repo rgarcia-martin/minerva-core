@@ -23,6 +23,19 @@ public record SaleLine(
 
     public SaleLine {
         DomainRules.requireNonNull(id, FIELD_ID);
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(FIELD_QUANTITY + " must be greater than zero");
+        }
+
+        final boolean hasItem = itemId != null;
+        final boolean hasFreeConcept = freeConceptId != null;
+        if (hasItem == hasFreeConcept) {
+            throw new IllegalArgumentException("saleLine must reference exactly one of itemId or freeConceptId");
+        }
+        if (hasItem && quantity != 1) {
+            throw new IllegalArgumentException(FIELD_QUANTITY + " must be equal to one when selling an inventory item");
+        }
+
         DomainRules.requirePositiveOrZero(unitPrice, FIELD_UNIT_PRICE);
         unitPrice = DomainRules.scaleMoney(unitPrice);
         DomainRules.requireNonNull(taxId, FIELD_TAX_ID);
@@ -44,9 +57,6 @@ public record SaleLine(
             final UUID taxId
     ) {
         DomainRules.requireNonNull(freeConceptId, FIELD_FREE_CONCEPT_ID);
-        if (quantity <= 0) {
-            throw new IllegalArgumentException(FIELD_QUANTITY + " must be greater than zero");
-        }
         return new SaleLine(UUID.randomUUID(), null, freeConceptId, quantity, unitPrice, taxId);
     }
 

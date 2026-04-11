@@ -33,7 +33,7 @@ public class FreeConceptEntity {
     private BigDecimal price;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "tax_id", referencedColumnName = "id")
+    @JoinColumn(name = "tax_id", referencedColumnName = "id", nullable = false)
     private TaxEntity tax;
 
     @Column(length = 4000)

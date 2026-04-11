@@ -65,10 +65,10 @@ class TaxServiceTest {
     }
 
     @Test
-    void shouldFindAllTaxesSortedByDescription() {
-        final var reduced = Tax.create("Reduced", new BigDecimal("10"), BigDecimal.ZERO);
+    void shouldReturnRepositoryOrderFromFindAll() {
         final var general = Tax.create("General", new BigDecimal("21"), BigDecimal.ZERO);
-        when(taxRepository.findAll()).thenReturn(List.of(reduced, general));
+        final var reduced = Tax.create("Reduced", new BigDecimal("10"), BigDecimal.ZERO);
+        when(taxRepository.findAll()).thenReturn(List.of(general, reduced));
 
         final var result = taxService.findAll();
 

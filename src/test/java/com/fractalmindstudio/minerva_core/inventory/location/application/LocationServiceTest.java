@@ -65,10 +65,10 @@ class LocationServiceTest {
     }
 
     @Test
-    void shouldFindAllLocationsSortedByName() {
-        final var b = Location.create("B-location", null);
+    void shouldReturnRepositoryOrderFromFindAll() {
         final var a = Location.create("A-location", null);
-        when(locationRepository.findAll()).thenReturn(List.of(b, a));
+        final var b = Location.create("B-location", null);
+        when(locationRepository.findAll()).thenReturn(List.of(a, b));
 
         final var result = locationService.findAll();
 

@@ -7,7 +7,6 @@ import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -19,9 +18,14 @@ public class UserService {
     public static final String RESOURCE_NAME = "user";
 
     private final UserRepository userRepository;
+    private final PasswordHasher passwordHasher;
 
-    public UserService(final UserRepository userRepository) {
+    public UserService(
+            final UserRepository userRepository,
+            final PasswordHasher passwordHasher
+    ) {
         this.userRepository = userRepository;
+        this.passwordHasher = passwordHasher;
     }
 
     @Transactional
@@ -33,7 +37,7 @@ public class UserService {
             final String address,
             final Set<Role> roles
     ) {
-        return userRepository.save(User.create(name, lastName, email, password, address, roles));
+        return userRepository.save(User.create(name, lastName, email, passwordHasher.hash(password), address, roles));
     }
 
     public User getById(final UUID id) {
@@ -41,9 +45,7 @@ public class UserService {
     }
 
     public List<User> findAll() {
-        return userRepository.findAll().stream()
-                .sorted(Comparator.comparing(User::lastName).thenComparing(User::name))
-                .toList();
+        return userRepository.findAll();
     }
 
     @Transactional
@@ -58,7 +60,16 @@ public class UserService {
             final boolean active
     ) {
         getById(id);
-        return userRepository.save(new User(id, name, lastName, email, password, address, roles, active));
+        return userRepository.save(new User(
+                id,
+                name,
+                lastName,
+                email,
+                passwordHasher.hash(password),
+                address,
+                roles,
+                active
+        ));
     }
 
     @Transactional

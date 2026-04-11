@@ -1,5 +1,6 @@
 package com.fractalmindstudio.minerva_core.sales.sale.infrastructure.persistence;
 
+import com.fractalmindstudio.minerva_core.catalog.freeconcept.infrastructure.persistence.FreeConceptEntity;
 import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.TaxEntity;
 import com.fractalmindstudio.minerva_core.inventory.item.infrastructure.persistence.ItemEntity;
 import jakarta.persistence.Column;
@@ -28,8 +29,9 @@ public class SaleLineEntity {
     @JoinColumn(name = "item_id", referencedColumnName = "id")
     private ItemEntity item;
 
-    @Column(length = 36)
-    private String freeConceptId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "free_concept_id", referencedColumnName = "id")
+    private FreeConceptEntity freeConcept;
 
     @Column(nullable = false)
     private int quantity;

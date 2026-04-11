@@ -19,6 +19,7 @@ public record PaymentMethod(
         DomainRules.requireNonNull(id, FIELD_ID);
         name = DomainRules.requireNonBlank(name, FIELD_NAME);
         DomainRules.requireNonNull(type, FIELD_TYPE);
+        configuration = DomainRules.trimToNull(configuration);
     }
 
     public static PaymentMethod create(

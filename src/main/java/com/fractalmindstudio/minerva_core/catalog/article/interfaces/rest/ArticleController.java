@@ -52,7 +52,7 @@ public class ArticleController {
                 request.retailPrice(),
                 Boolean.TRUE.equals(request.canHaveChildren()),
                 request.numberOfChildren() == null ? 0 : request.numberOfChildren(),
-                request.parentArticleId()
+                request.childArticleId()
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(article));
     }
@@ -84,7 +84,7 @@ public class ArticleController {
                 request.retailPrice(),
                 Boolean.TRUE.equals(request.canHaveChildren()),
                 request.numberOfChildren() == null ? 0 : request.numberOfChildren(),
-                request.parentArticleId()
+                request.childArticleId()
         );
         return toResponse(article);
     }
@@ -108,14 +108,14 @@ public class ArticleController {
                 article.retailPrice(),
                 article.canHaveChildren(),
                 article.numberOfChildren(),
-                article.parentArticleId()
+                article.childArticleId()
         );
     }
 
     public record UpsertArticleRequest(
             @NotBlank String name,
             @NotBlank String code,
-            @NotBlank String barcode,
+            String barcode,
             String image,
             String description,
             @NotNull UUID taxId,
@@ -123,7 +123,7 @@ public class ArticleController {
             @NotNull @DecimalMin("0.0") BigDecimal retailPrice,
             Boolean canHaveChildren,
             @PositiveOrZero Integer numberOfChildren,
-            UUID parentArticleId
+            UUID childArticleId
     ) {
     }
 
@@ -139,7 +139,7 @@ public class ArticleController {
             BigDecimal retailPrice,
             boolean canHaveChildren,
             int numberOfChildren,
-            UUID parentArticleId
+            UUID childArticleId
     ) {
     }
 }

@@ -1,5 +1,6 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.interfaces.rest;
 
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemStatus;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.application.PurchaseService;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.Purchase;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseLine;
@@ -26,7 +27,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -73,7 +73,9 @@ class PurchaseControllerTest {
                             "quantity": 5,
                             "buyPrice": 10.00,
                             "profitMargin": 0.20,
-                            "taxId": "%s"
+                            "taxId": "%s",
+                            "itemStatus": "OPENED",
+                            "hasChildren": true
                         }
                     ]
                 }
@@ -82,7 +84,7 @@ class PurchaseControllerTest {
 
     @Test
     void shouldCreatePurchase() throws Exception {
-        final var line = PurchaseLine.create(ARTICLE_ID, 5, new BigDecimal("10"), new BigDecimal("0.20"), TAX_ID);
+        final var line = PurchaseLine.create(ARTICLE_ID, 5, new BigDecimal("10"), new BigDecimal("0.20"), TAX_ID, ItemStatus.OPENED, true);
         final var purchase = Purchase.create(
                 LocalDateTime.now(), null, PurchaseState.NEW, "PO-001", "PC-001",
                 PROVIDER_ID, LOCATION_ID, false, List.of(line)
@@ -97,7 +99,9 @@ class PurchaseControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(purchase.id().toString()))
                 .andExpect(jsonPath("$.code").value("PO-001"))
-                .andExpect(jsonPath("$.lines", hasSize(1)));
+                .andExpect(jsonPath("$.lines", hasSize(1)))
+                .andExpect(jsonPath("$.lines[0].itemStatus").value("OPENED"))
+                .andExpect(jsonPath("$.lines[0].hasChildren").value(true));
     }
 
     @Test

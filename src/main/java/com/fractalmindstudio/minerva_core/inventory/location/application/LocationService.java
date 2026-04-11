@@ -6,7 +6,6 @@ import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,9 +31,7 @@ public class LocationService {
     }
 
     public List<Location> findAll() {
-        return locationRepository.findAll().stream()
-                .sorted(Comparator.comparing(Location::name))
-                .toList();
+        return locationRepository.findAll();
     }
 
     @Transactional

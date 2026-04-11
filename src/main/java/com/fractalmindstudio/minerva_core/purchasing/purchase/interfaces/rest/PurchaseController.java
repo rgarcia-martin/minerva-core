@@ -1,5 +1,6 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.interfaces.rest;
 
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemStatus;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.application.PurchaseService;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.Purchase;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseLine;
@@ -98,8 +99,13 @@ public class PurchaseController {
 
         return lines.stream()
                 .map(line -> PurchaseLine.create(
-                        line.articleId(), line.quantity(), line.buyPrice(),
-                        line.profitMargin(), line.taxId()
+                        line.articleId(),
+                        line.quantity(),
+                        line.buyPrice(),
+                        line.profitMargin(),
+                        line.taxId(),
+                        line.itemStatus(),
+                        Boolean.TRUE.equals(line.hasChildren())
                 ))
                 .toList();
     }
@@ -128,7 +134,9 @@ public class PurchaseController {
                 purchaseLine.quantity(),
                 purchaseLine.buyPrice(),
                 purchaseLine.profitMargin(),
-                purchaseLine.taxId()
+                purchaseLine.taxId(),
+                purchaseLine.itemStatus(),
+                purchaseLine.hasChildren()
         );
     }
 
@@ -150,7 +158,9 @@ public class PurchaseController {
             @Min(1) int quantity,
             @NotNull @DecimalMin("0.0") BigDecimal buyPrice,
             @NotNull @DecimalMin("0.0") BigDecimal profitMargin,
-            @NotNull UUID taxId
+            @NotNull UUID taxId,
+            ItemStatus itemStatus,
+            Boolean hasChildren
     ) {
     }
 
@@ -176,7 +186,9 @@ public class PurchaseController {
             int quantity,
             BigDecimal buyPrice,
             BigDecimal profitMargin,
-            UUID taxId
+            UUID taxId,
+            ItemStatus itemStatus,
+            boolean hasChildren
     ) {
     }
 }

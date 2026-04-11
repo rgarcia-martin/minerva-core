@@ -62,4 +62,7 @@ public class ItemEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "location_id", referencedColumnName = "id")
     private LocationEntity location;
+
+    @Column(name = "origin_purchase_id", length = 36)
+    private String originPurchaseId;
 }

@@ -12,12 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests for the Article domain model.
- * An article represents a product in the catalog with pricing, tax linkage,
- * and optional parent-child relationship for packages (e.g., a box of pens
- * where each pen is sold individually).
- */
 class ArticleTest {
 
     private static final String VALID_NAME = "Gaming Laptop";
@@ -28,8 +22,6 @@ class ArticleTest {
     private static final BigDecimal VALID_BASE_PRICE = new BigDecimal("1000.00");
     private static final BigDecimal VALID_RETAIL_PRICE = new BigDecimal("1210.00");
     private static final int ZERO_CHILDREN = 0;
-
-    // --- Factory method ---
 
     @Test
     void shouldCreateArticleWithGeneratedId() {
@@ -47,8 +39,6 @@ class ArticleTest {
         assertEquals(VALID_BARCODE, article.barcode());
         assertEquals(taxId, article.taxId());
     }
-
-    // --- Price scaling ---
 
     @Test
     void shouldScaleBasePriceToTwoDecimalPlaces() {
@@ -72,8 +62,6 @@ class ArticleTest {
         assertEquals(new BigDecimal("1210.56"), article.retailPrice());
     }
 
-    // --- Package (parent-child) relationship ---
-
     @Test
     void shouldCreatePackageArticleWithChildReference() {
         final UUID childArticleId = UUID.randomUUID();
@@ -86,7 +74,7 @@ class ArticleTest {
 
         assertTrue(packageArticle.canHaveChildren());
         assertEquals(12, packageArticle.numberOfChildren());
-        assertEquals(childArticleId, packageArticle.parentArticleId());
+        assertEquals(childArticleId, packageArticle.childArticleId());
     }
 
     @Test
@@ -99,10 +87,8 @@ class ArticleTest {
 
         assertFalse(article.canHaveChildren());
         assertEquals(ZERO_CHILDREN, article.numberOfChildren());
-        assertNull(article.parentArticleId());
+        assertNull(article.childArticleId());
     }
-
-    // --- Invariant enforcement ---
 
     @Test
     void shouldRejectNullId() {
@@ -163,36 +149,51 @@ class ArticleTest {
         assertThrows(IllegalArgumentException.class, () -> Article.create(
                 VALID_NAME, VALID_CODE, VALID_BARCODE, null, null,
                 UUID.randomUUID(), VALID_BASE_PRICE, VALID_RETAIL_PRICE,
-                true, -1, null
+                true, -1, UUID.randomUUID()
         ));
     }
 
     @Test
-    void shouldTrimName() {
-        final Article article = Article.create(
-                "  Laptop  ", VALID_CODE, VALID_BARCODE, null, null,
+    void shouldRejectPackageWithoutChildArticle() {
+        assertThrows(NullPointerException.class, () -> Article.create(
+                VALID_NAME, VALID_CODE, VALID_BARCODE, null, null,
                 UUID.randomUUID(), VALID_BASE_PRICE, VALID_RETAIL_PRICE,
-                false, ZERO_CHILDREN, null
-        );
-
-        assertEquals("Laptop", article.name());
+                true, 2, null
+        ));
     }
 
     @Test
-    void shouldTrimCode() {
-        final Article article = Article.create(
-                VALID_NAME, "  LAP-001  ", VALID_BARCODE, null, null,
+    void shouldRejectPackageWithZeroChildren() {
+        assertThrows(IllegalArgumentException.class, () -> Article.create(
+                VALID_NAME, VALID_CODE, VALID_BARCODE, null, null,
                 UUID.randomUUID(), VALID_BASE_PRICE, VALID_RETAIL_PRICE,
-                false, ZERO_CHILDREN, null
-        );
-
-        assertEquals("LAP-001", article.code());
+                true, 0, UUID.randomUUID()
+        ));
     }
 
     @Test
-    void shouldAllowNullOptionalFields() {
+    void shouldRejectStandaloneArticleWithChildArticleConfigured() {
+        assertThrows(IllegalArgumentException.class, () -> Article.create(
+                VALID_NAME, VALID_CODE, VALID_BARCODE, null, null,
+                UUID.randomUUID(), VALID_BASE_PRICE, VALID_RETAIL_PRICE,
+                false, 0, UUID.randomUUID()
+        ));
+    }
+
+    @Test
+    void shouldRejectSelfReferenceAsChildArticle() {
+        final UUID id = UUID.randomUUID();
+        assertThrows(IllegalArgumentException.class, () -> new Article(
+                id, VALID_NAME, VALID_CODE, VALID_BARCODE, null, null,
+                UUID.randomUUID(), VALID_BASE_PRICE, VALID_RETAIL_PRICE,
+                true, 2, id
+        ));
+    }
+
+    @Test
+    void shouldTrimAndNullifyOptionalFields() {
         final Article article = Article.create(
-                VALID_NAME, VALID_CODE, null, null, null,
+                VALID_NAME, VALID_CODE, "  ", "  ", "  ",
                 UUID.randomUUID(), VALID_BASE_PRICE, VALID_RETAIL_PRICE,
                 false, ZERO_CHILDREN, null
         );
@@ -200,5 +201,17 @@ class ArticleTest {
         assertNull(article.barcode());
         assertNull(article.image());
         assertNull(article.description());
+    }
+
+    @Test
+    void shouldTrimNameAndCode() {
+        final Article article = Article.create(
+                "  Laptop  ", "  LAP-001  ", VALID_BARCODE, null, null,
+                UUID.randomUUID(), VALID_BASE_PRICE, VALID_RETAIL_PRICE,
+                false, ZERO_CHILDREN, null
+        );
+
+        assertEquals("Laptop", article.name());
+        assertEquals("LAP-001", article.code());
     }
 }

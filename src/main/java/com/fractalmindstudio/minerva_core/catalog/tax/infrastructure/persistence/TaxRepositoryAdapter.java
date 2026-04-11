@@ -32,7 +32,7 @@ public class TaxRepositoryAdapter implements TaxRepository {
 
     @Override
     public List<Tax> findAll() {
-        return springDataTaxRepository.findAll().stream().map(this::toDomain).toList();
+        return springDataTaxRepository.findAllByOrderByDescriptionAsc().stream().map(this::toDomain).toList();
     }
 
     @Override

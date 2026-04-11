@@ -1,6 +1,7 @@
 package com.fractalmindstudio.minerva_core.sales.sale.infrastructure.persistence;
 
 import com.fractalmindstudio.minerva_core.identity.user.infrastructure.persistence.UserEntity;
+import com.fractalmindstudio.minerva_core.payment.paymentmethod.infrastructure.persistence.PaymentMethodEntity;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.SaleState;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -42,8 +43,9 @@ public class SaleEntity {
     @Column(length = 36)
     private String clientId;
 
-    @Column(nullable = false, length = 36)
-    private String paymentMethodId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_method_id", referencedColumnName = "id", nullable = false)
+    private PaymentMethodEntity paymentMethod;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -55,7 +57,7 @@ public class SaleEntity {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal totalAmount;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "sale_id", nullable = false)
     @OrderColumn(name = "line_position")
     private List<SaleLineEntity> lines = new ArrayList<>();

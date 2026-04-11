@@ -30,7 +30,7 @@ public class UserRepositoryAdapter implements UserRepository {
 
     @Override
     public List<User> findAll() {
-        return springDataUserRepository.findAll().stream().map(this::toDomain).toList();
+        return springDataUserRepository.findAllByOrderByLastNameAscNameAsc().stream().map(this::toDomain).toList();
     }
 
     @Override
@@ -44,7 +44,7 @@ public class UserRepositoryAdapter implements UserRepository {
         entity.setName(user.name());
         entity.setLastName(user.lastName());
         entity.setEmail(user.email());
-        entity.setPassword(user.password());
+        entity.setPasswordHash(user.passwordHash());
         entity.setAddress(user.address());
         entity.setRoles(user.roles());
         entity.setActive(user.active());
@@ -57,7 +57,7 @@ public class UserRepositoryAdapter implements UserRepository {
                 entity.getName(),
                 entity.getLastName(),
                 entity.getEmail(),
-                entity.getPassword(),
+                entity.getPasswordHash(),
                 entity.getAddress(),
                 entity.getRoles(),
                 entity.isActive()

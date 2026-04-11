@@ -20,11 +20,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -54,34 +49,6 @@ class ItemControllerTest {
                 .build();
     }
 
-    private String validItemJson() {
-        return """
-                {
-                    "articleId": "%s",
-                    "itemStatus": "AVAILABLE",
-                    "hasChildren": false,
-                    "cost": 25.50
-                }
-                """.formatted(ARTICLE_ID);
-    }
-
-    @Test
-    void shouldCreateItem() throws Exception {
-        final var item = Item.create(ARTICLE_ID, ItemStatus.AVAILABLE, null, false, new BigDecimal("25.50"), null, null, null, null);
-        when(itemService.create(
-                eq(ARTICLE_ID), eq(ItemStatus.AVAILABLE), isNull(), eq(false),
-                any(BigDecimal.class), isNull(), isNull(), isNull(), isNull()
-        )).thenReturn(item);
-
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validItemJson()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(item.id().toString()))
-                .andExpect(jsonPath("$.articleId").value(ARTICLE_ID.toString()))
-                .andExpect(jsonPath("$.itemStatus").value("AVAILABLE"));
-    }
-
     @Test
     void shouldFindAllItems() throws Exception {
         final var items = List.of(
@@ -91,7 +58,8 @@ class ItemControllerTest {
 
         mockMvc.perform(get(BASE_PATH))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)));
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].articleId").value(ARTICLE_ID.toString()));
     }
 
     @Test
@@ -101,39 +69,8 @@ class ItemControllerTest {
 
         mockMvc.perform(get(BASE_PATH + "/{id}", item.id()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.articleId").value(ARTICLE_ID.toString()));
-    }
-
-    @Test
-    void shouldUpdateItem() throws Exception {
-        final var id = UUID.randomUUID();
-        final var updated = new Item(id, ARTICLE_ID, ItemStatus.SOLD, null, false, new BigDecimal("30"), null, null, null, null);
-        when(itemService.update(
-                eq(id), eq(ARTICLE_ID), eq(ItemStatus.SOLD), isNull(), eq(false),
-                any(BigDecimal.class), isNull(), isNull(), isNull(), isNull()
-        )).thenReturn(updated);
-
-        mockMvc.perform(put(BASE_PATH + "/{id}", id)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                    "articleId": "%s",
-                                    "itemStatus": "SOLD",
-                                    "hasChildren": false,
-                                    "cost": 30
-                                }
-                                """.formatted(ARTICLE_ID)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.itemStatus").value("SOLD"));
-    }
-
-    @Test
-    void shouldDeleteItem() throws Exception {
-        final var id = UUID.randomUUID();
-        doNothing().when(itemService).delete(id);
-
-        mockMvc.perform(delete(BASE_PATH + "/{id}", id))
-                .andExpect(status().isNoContent());
+                .andExpect(jsonPath("$.articleId").value(ARTICLE_ID.toString()))
+                .andExpect(jsonPath("$.itemStatus").value("AVAILABLE"));
     }
 
     @Test
@@ -148,48 +85,6 @@ class ItemControllerTest {
     }
 
     @Test
-    void shouldReturn400WhenArticleIdIsMissing() throws Exception {
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"cost": 10}
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
-    void shouldReturn400WhenCostIsMissing() throws Exception {
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"articleId": "%s"}
-                                """.formatted(ARTICLE_ID)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
-    void shouldReturn400WhenCostIsNegative() throws Exception {
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"articleId": "%s", "cost": -5}
-                                """.formatted(ARTICLE_ID)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
-    void shouldReturn400WhenBodyIsNotReadable() throws Exception {
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("invalid"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
     void shouldReturn400WhenPathVariableIsInvalidUuid() throws Exception {
         mockMvc.perform(get(BASE_PATH + "/{id}", "not-uuid"))
                 .andExpect(status().isBadRequest())
@@ -197,26 +92,28 @@ class ItemControllerTest {
     }
 
     @Test
-    void shouldReturn415WhenMediaTypeIsUnsupported() throws Exception {
+    void shouldReturn405WhenCreateIsAttempted() throws Exception {
         mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.TEXT_PLAIN)
-                        .content("text"))
-                .andExpect(status().isUnsupportedMediaType())
-                .andExpect(jsonPath("$.status").value(415));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.status").value(405));
     }
 
     @Test
-    void shouldReturn400WhenServiceThrowsIllegalArgument() throws Exception {
-        when(itemService.create(
-                eq(ARTICLE_ID), eq(ItemStatus.AVAILABLE), isNull(), eq(false),
-                any(BigDecimal.class), isNull(), isNull(), isNull(), isNull()
-        )).thenThrow(new IllegalArgumentException("invalid item"));
-
-        mockMvc.perform(post(BASE_PATH)
+    void shouldReturn405WhenUpdateIsAttempted() throws Exception {
+        mockMvc.perform(put(BASE_PATH + "/{id}", UUID.randomUUID())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(validItemJson()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("invalid item"));
+                        .content("{}"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.status").value(405));
+    }
+
+    @Test
+    void shouldReturn405WhenDeleteIsAttempted() throws Exception {
+        mockMvc.perform(delete(BASE_PATH + "/{id}", UUID.randomUUID()))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.status").value(405));
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.fractalmindstudio.minerva_core.catalog.freeconcept.infrastructure.pe
 import com.fractalmindstudio.minerva_core.catalog.freeconcept.domain.FreeConcept;
 import com.fractalmindstudio.minerva_core.catalog.freeconcept.domain.FreeConceptRepository;
 import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.SpringDataTaxRepository;
+import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import com.fractalmindstudio.minerva_core.shared.infrastructure.persistence.UuidMapper;
 import org.springframework.stereotype.Repository;
 
@@ -36,7 +37,7 @@ public class FreeConceptRepositoryAdapter implements FreeConceptRepository {
 
     @Override
     public List<FreeConcept> findAll() {
-        return springDataFreeConceptRepository.findAll().stream().map(this::toDomain).toList();
+        return springDataFreeConceptRepository.findAllByOrderByNameAsc().stream().map(this::toDomain).toList();
     }
 
     @Override
@@ -50,7 +51,8 @@ public class FreeConceptRepositoryAdapter implements FreeConceptRepository {
         entity.setName(freeConcept.name());
         entity.setBarcode(freeConcept.barcode());
         entity.setPrice(freeConcept.price());
-        entity.setTax(springDataTaxRepository.getReferenceById(UuidMapper.toString(freeConcept.taxId())));
+        entity.setTax(springDataTaxRepository.findById(UuidMapper.toString(freeConcept.taxId()))
+                .orElseThrow(() -> new NotFoundException("tax", freeConcept.taxId())));
         entity.setDescription(freeConcept.description());
         return entity;
     }

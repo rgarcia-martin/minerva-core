@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,9 +36,7 @@ public class TaxService {
     }
 
     public List<Tax> findAll() {
-        return taxRepository.findAll().stream()
-                .sorted(Comparator.comparing(Tax::description))
-                .toList();
+        return taxRepository.findAll();
     }
 
     @Transactional
@@ -50,8 +47,7 @@ public class TaxService {
             final BigDecimal surchargeRate
     ) {
         getById(id);
-        final Tax updatedTax = new Tax(id, description, rate, surchargeRate);
-        return taxRepository.save(updatedTax);
+        return taxRepository.save(new Tax(id, description, rate, surchargeRate));
     }
 
     @Transactional

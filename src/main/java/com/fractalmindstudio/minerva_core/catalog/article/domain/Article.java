@@ -17,28 +17,48 @@ public record Article(
         BigDecimal retailPrice,
         boolean canHaveChildren,
         int numberOfChildren,
-        UUID parentArticleId
+        UUID childArticleId
 ) {
 
     public static final String FIELD_ID = "article.id";
     public static final String FIELD_NAME = "article.name";
     public static final String FIELD_CODE = "article.code";
-    public static final String FIELD_BARCODE = "article.barcode";
     public static final String FIELD_TAX_ID = "article.taxId";
     public static final String FIELD_BASE_PRICE = "article.basePrice";
     public static final String FIELD_RETAIL_PRICE = "article.retailPrice";
     public static final String FIELD_NUMBER_OF_CHILDREN = "article.numberOfChildren";
+    public static final String FIELD_CHILD_ARTICLE_ID = "article.childArticleId";
 
     public Article {
         DomainRules.requireNonNull(id, FIELD_ID);
         name = DomainRules.requireNonBlank(name, FIELD_NAME);
         code = DomainRules.requireNonBlank(code, FIELD_CODE);
+        barcode = DomainRules.trimToNull(barcode);
+        image = DomainRules.trimToNull(image);
+        description = DomainRules.trimToNull(description);
         DomainRules.requireNonNull(taxId, FIELD_TAX_ID);
         DomainRules.requirePositiveOrZero(basePrice, FIELD_BASE_PRICE);
         DomainRules.requirePositiveOrZero(retailPrice, FIELD_RETAIL_PRICE);
         basePrice = DomainRules.scaleMoney(basePrice);
         retailPrice = DomainRules.scaleMoney(retailPrice);
         DomainRules.requirePositiveOrZero(numberOfChildren, FIELD_NUMBER_OF_CHILDREN);
+
+        if (canHaveChildren) {
+            if (numberOfChildren == 0) {
+                throw new IllegalArgumentException(FIELD_NUMBER_OF_CHILDREN + " must be greater than zero when article can have children");
+            }
+            DomainRules.requireNonNull(childArticleId, FIELD_CHILD_ARTICLE_ID);
+            if (id.equals(childArticleId)) {
+                throw new IllegalArgumentException(FIELD_CHILD_ARTICLE_ID + " must not reference the article itself");
+            }
+        } else {
+            if (numberOfChildren != 0) {
+                throw new IllegalArgumentException(FIELD_NUMBER_OF_CHILDREN + " must be zero when article cannot have children");
+            }
+            if (childArticleId != null) {
+                throw new IllegalArgumentException(FIELD_CHILD_ARTICLE_ID + " must be null when article cannot have children");
+            }
+        }
     }
 
     public static Article create(
@@ -52,7 +72,7 @@ public record Article(
             final BigDecimal retailPrice,
             final boolean canHaveChildren,
             final int numberOfChildren,
-            final UUID parentArticleId
+            final UUID childArticleId
     ) {
         return new Article(
                 UUID.randomUUID(),
@@ -66,8 +86,7 @@ public record Article(
                 retailPrice,
                 canHaveChildren,
                 numberOfChildren,
-                parentArticleId
+                childArticleId
         );
     }
-
 }

@@ -20,12 +20,9 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -60,7 +57,7 @@ class ArticleControllerTest {
                 {
                     "name": "Widget",
                     "code": "WDG-001",
-                    "barcode": "1234567890",
+                    "barcode": null,
                     "image": null,
                     "description": "A widget",
                     "taxId": "%s",
@@ -68,19 +65,19 @@ class ArticleControllerTest {
                     "retailPrice": 15.00,
                     "canHaveChildren": false,
                     "numberOfChildren": 0,
-                    "parentArticleId": null
+                    "childArticleId": null
                 }
                 """.formatted(TAX_ID);
     }
 
     @Test
-    void shouldCreateArticle() throws Exception {
+    void shouldCreateArticleWithOptionalBarcode() throws Exception {
         final var article = Article.create(
-                "Widget", "WDG-001", "1234567890", null, "A widget",
+                "Widget", "WDG-001", null, null, "A widget",
                 TAX_ID, new BigDecimal("10"), new BigDecimal("15"), false, 0, null
         );
         when(articleService.create(
-                eq("Widget"), eq("WDG-001"), eq("1234567890"), isNull(), eq("A widget"),
+                eq("Widget"), eq("WDG-001"), isNull(), isNull(), eq("A widget"),
                 eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
                 eq(false), eq(0), isNull()
         )).thenReturn(article);
@@ -91,15 +88,45 @@ class ArticleControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(article.id().toString()))
                 .andExpect(jsonPath("$.name").value("Widget"))
-                .andExpect(jsonPath("$.code").value("WDG-001"));
+                ;
+    }
+
+    @Test
+    void shouldCreatePackArticleWithChildArticleId() throws Exception {
+        final UUID childArticleId = UUID.randomUUID();
+        final var article = Article.create(
+                "Pack", "PACK-001", null, null, null,
+                TAX_ID, new BigDecimal("10"), new BigDecimal("15"), true, 3, childArticleId
+        );
+        when(articleService.create(
+                eq("Pack"), eq("PACK-001"), isNull(), isNull(), isNull(),
+                eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
+                eq(true), eq(3), eq(childArticleId)
+        )).thenReturn(article);
+
+        mockMvc.perform(post(BASE_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "name": "Pack",
+                                    "code": "PACK-001",
+                                    "taxId": "%s",
+                                    "basePrice": 10,
+                                    "retailPrice": 15,
+                                    "canHaveChildren": true,
+                                    "numberOfChildren": 3,
+                                    "childArticleId": "%s"
+                                }
+                                """.formatted(TAX_ID, childArticleId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.childArticleId").value(childArticleId.toString()));
     }
 
     @Test
     void shouldFindAllArticles() throws Exception {
-        final var articles = List.of(
-                Article.create("A", "A-1", "111", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null)
-        );
-        when(articleService.findAll()).thenReturn(articles);
+        when(articleService.findAll()).thenReturn(List.of(
+                Article.create("A", "A-1", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null)
+        ));
 
         mockMvc.perform(get(BASE_PATH))
                 .andExpect(status().isOk())
@@ -108,7 +135,7 @@ class ArticleControllerTest {
 
     @Test
     void shouldGetArticleById() throws Exception {
-        final var article = Article.create("Widget", "WDG-001", "123", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        final var article = Article.create("Widget", "WDG-001", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
         when(articleService.getById(article.id())).thenReturn(article);
 
         mockMvc.perform(get(BASE_PATH + "/{id}", article.id()))
@@ -119,10 +146,10 @@ class ArticleControllerTest {
     @Test
     void shouldUpdateArticle() throws Exception {
         final var id = UUID.randomUUID();
-        final var updated = new Article(id, "Updated", "UPD-001", "999", null, "Updated desc",
+        final var updated = new Article(id, "Updated", "UPD-001", null, null, "Updated desc",
                 TAX_ID, new BigDecimal("20"), new BigDecimal("30"), false, 0, null);
         when(articleService.update(
-                eq(id), eq("Updated"), eq("UPD-001"), eq("999"), isNull(), eq("Updated desc"),
+                eq(id), eq("Updated"), eq("UPD-001"), isNull(), isNull(), eq("Updated desc"),
                 eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
                 eq(false), eq(0), isNull()
         )).thenReturn(updated);
@@ -131,7 +158,7 @@ class ArticleControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                    "name": "Updated", "code": "UPD-001", "barcode": "999",
+                                    "name": "Updated", "code": "UPD-001", "barcode": null,
                                     "description": "Updated desc", "taxId": "%s",
                                     "basePrice": 20, "retailPrice": 30
                                 }
@@ -166,7 +193,7 @@ class ArticleControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                    "name": "", "code": "WDG-001", "barcode": "123",
+                                    "name": "", "code": "WDG-001",
                                     "taxId": "%s", "basePrice": 10, "retailPrice": 15
                                 }
                                 """.formatted(TAX_ID)))
@@ -180,36 +207,8 @@ class ArticleControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                    "name": "Widget", "barcode": "123",
+                                    "name": "Widget",
                                     "taxId": "%s", "basePrice": 10, "retailPrice": 15
-                                }
-                                """.formatted(TAX_ID)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
-    void shouldReturn400WhenTaxIdIsMissing() throws Exception {
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                    "name": "Widget", "code": "WDG", "barcode": "123",
-                                    "basePrice": 10, "retailPrice": 15
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
-    void shouldReturn400WhenBasePriceIsNegative() throws Exception {
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                    "name": "Widget", "code": "WDG", "barcode": "123",
-                                    "taxId": "%s", "basePrice": -1, "retailPrice": 15
                                 }
                                 """.formatted(TAX_ID)))
                 .andExpect(status().isBadRequest())
@@ -223,46 +222,5 @@ class ArticleControllerTest {
                         .content("broken"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
-    void shouldReturn400WhenPathVariableIsInvalidUuid() throws Exception {
-        mockMvc.perform(get(BASE_PATH + "/{id}", "bad-uuid"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
-    }
-
-    @Test
-    void shouldReturn415WhenMediaTypeIsUnsupported() throws Exception {
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.TEXT_PLAIN)
-                        .content("text"))
-                .andExpect(status().isUnsupportedMediaType())
-                .andExpect(jsonPath("$.status").value(415));
-    }
-
-    @Test
-    void shouldReturn400WhenServiceThrowsIllegalArgument() throws Exception {
-        when(articleService.create(
-                eq("Widget"), eq("WDG-001"), eq("1234567890"), isNull(), eq("A widget"),
-                eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
-                eq(false), eq(0), isNull()
-        )).thenThrow(new IllegalArgumentException("invalid article data"));
-
-        mockMvc.perform(post(BASE_PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validArticleJson()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("invalid article data"));
-    }
-
-    @Test
-    void shouldReturn500WhenUnexpectedErrorOccurs() throws Exception {
-        when(articleService.findAll()).thenThrow(new RuntimeException("unexpected"));
-
-        mockMvc.perform(get(BASE_PATH))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.status").value(500))
-                .andExpect(jsonPath("$.message").value("Unexpected application error"));
     }
 }

@@ -2,12 +2,12 @@ package com.fractalmindstudio.minerva_core.catalog.freeconcept.application;
 
 import com.fractalmindstudio.minerva_core.catalog.freeconcept.domain.FreeConcept;
 import com.fractalmindstudio.minerva_core.catalog.freeconcept.domain.FreeConceptRepository;
+import com.fractalmindstudio.minerva_core.catalog.tax.domain.TaxRepository;
 import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,11 +16,17 @@ import java.util.UUID;
 public class FreeConceptService {
 
     public static final String RESOURCE_NAME = "freeConcept";
+    public static final String TAX_RESOURCE_NAME = "tax";
 
     private final FreeConceptRepository freeConceptRepository;
+    private final TaxRepository taxRepository;
 
-    public FreeConceptService(final FreeConceptRepository freeConceptRepository) {
+    public FreeConceptService(
+            final FreeConceptRepository freeConceptRepository,
+            final TaxRepository taxRepository
+    ) {
         this.freeConceptRepository = freeConceptRepository;
+        this.taxRepository = taxRepository;
     }
 
     @Transactional
@@ -31,6 +37,7 @@ public class FreeConceptService {
             final UUID taxId,
             final String description
     ) {
+        validateTax(taxId);
         return freeConceptRepository.save(FreeConcept.create(name, barcode, price, taxId, description));
     }
 
@@ -39,9 +46,7 @@ public class FreeConceptService {
     }
 
     public List<FreeConcept> findAll() {
-        return freeConceptRepository.findAll().stream()
-                .sorted(Comparator.comparing(FreeConcept::name))
-                .toList();
+        return freeConceptRepository.findAll();
     }
 
     @Transactional
@@ -54,6 +59,7 @@ public class FreeConceptService {
             final String description
     ) {
         getById(id);
+        validateTax(taxId);
         return freeConceptRepository.save(new FreeConcept(id, name, barcode, price, taxId, description));
     }
 
@@ -61,5 +67,11 @@ public class FreeConceptService {
     public void delete(final UUID id) {
         getById(id);
         freeConceptRepository.deleteById(id);
+    }
+
+    private void validateTax(final UUID taxId) {
+        if (taxRepository.findById(taxId).isEmpty()) {
+            throw new NotFoundException(TAX_RESOURCE_NAME, taxId);
+        }
     }
 }

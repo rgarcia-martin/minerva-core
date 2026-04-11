@@ -1,5 +1,16 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.application;
 
+import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
+import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
+import com.fractalmindstudio.minerva_core.catalog.tax.domain.Tax;
+import com.fractalmindstudio.minerva_core.catalog.tax.domain.TaxRepository;
+import com.fractalmindstudio.minerva_core.inventory.item.domain.Item;
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemRepository;
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemStatus;
+import com.fractalmindstudio.minerva_core.inventory.location.domain.Location;
+import com.fractalmindstudio.minerva_core.inventory.location.domain.LocationRepository;
+import com.fractalmindstudio.minerva_core.purchasing.provider.domain.Provider;
+import com.fractalmindstudio.minerva_core.purchasing.provider.domain.ProviderRepository;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.Purchase;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseLine;
 import com.fractalmindstudio.minerva_core.purchasing.purchase.domain.PurchaseRepository;
@@ -21,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,17 +42,36 @@ class PurchaseServiceTest {
     private static final UUID PROVIDER_ID = UUID.randomUUID();
     private static final UUID LOCATION_ID = UUID.randomUUID();
     private static final UUID ARTICLE_ID = UUID.randomUUID();
+    private static final UUID CHILD_ARTICLE_ID = UUID.randomUUID();
     private static final UUID TAX_ID = UUID.randomUUID();
 
     @Mock
     private PurchaseRepository purchaseRepository;
 
+    @Mock
+    private ProviderRepository providerRepository;
+
+    @Mock
+    private LocationRepository locationRepository;
+
+    @Mock
+    private ArticleRepository articleRepository;
+
+    @Mock
+    private ItemRepository itemRepository;
+
+    @Mock
+    private TaxRepository taxRepository;
+
     @InjectMocks
     private PurchaseService purchaseService;
 
     @Test
-    void shouldCreatePurchase() {
+    void shouldCreatePurchaseAndGenerateInventoryItems() {
+        mockValidProviderAndLocation();
+        mockSimpleArticleAndTax();
         when(purchaseRepository.save(any(Purchase.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(itemRepository.save(any(Item.class))).thenAnswer(inv -> inv.getArgument(0));
         final var line = PurchaseLine.create(ARTICLE_ID, 2, new BigDecimal("50"), new BigDecimal("0.10"), TAX_ID);
 
         final var result = purchaseService.create(
@@ -51,16 +82,28 @@ class PurchaseServiceTest {
         assertThat(result.code()).isEqualTo("PO-001");
         assertThat(result.state()).isEqualTo(PurchaseState.NEW);
         assertThat(result.id()).isNotNull();
-        assertThat(result.totalCost()).isNotNull();
+        assertThat(result.totalCost()).isEqualByComparingTo(new BigDecimal("100.00"));
 
-        final var captor = ArgumentCaptor.forClass(Purchase.class);
-        verify(purchaseRepository).save(captor.capture());
-        assertThat(captor.getValue().lines()).hasSize(1);
+        verify(purchaseRepository).save(any(Purchase.class));
+        final var itemCaptor = ArgumentCaptor.forClass(Item.class);
+        verify(itemRepository, times(2)).save(itemCaptor.capture());
+        assertThat(itemCaptor.getAllValues())
+                .extracting(Item::articleId)
+                .containsExactly(ARTICLE_ID, ARTICLE_ID);
+        assertThat(itemCaptor.getAllValues())
+                .extracting(Item::itemStatus)
+                .containsExactly(ItemStatus.AVAILABLE, ItemStatus.AVAILABLE);
+        assertThat(itemCaptor.getAllValues())
+                .extracting(Item::originPurchaseId)
+                .containsOnly(result.id());
     }
 
     @Test
     void shouldCreatePurchaseWithRecalculatedTotalCost() {
+        mockValidProviderAndLocation();
+        mockSimpleArticleAndTax();
         when(purchaseRepository.save(any(Purchase.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(itemRepository.save(any(Item.class))).thenAnswer(inv -> inv.getArgument(0));
         final var line = PurchaseLine.create(ARTICLE_ID, 3, new BigDecimal("10"), new BigDecimal("0.20"), TAX_ID);
 
         final var result = purchaseService.create(
@@ -68,7 +111,113 @@ class PurchaseServiceTest {
                 PROVIDER_ID, LOCATION_ID, false, List.of(line)
         );
 
-        assertThat(result.totalCost()).isEqualByComparingTo(new BigDecimal("30"));
+        assertThat(result.totalCost()).isEqualByComparingTo(new BigDecimal("30.00"));
+    }
+
+    @Test
+    void shouldCreateChildItemsWhenPurchaseRegistersOpenedPackage() {
+        mockValidProviderAndLocation();
+        when(articleRepository.findById(ARTICLE_ID)).thenReturn(Optional.of(new Article(
+                ARTICLE_ID,
+                "Pack",
+                "PACK-1",
+                null,
+                null,
+                null,
+                TAX_ID,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                true,
+                2,
+                CHILD_ARTICLE_ID
+        )));
+        when(articleRepository.findById(CHILD_ARTICLE_ID)).thenReturn(Optional.of(new Article(
+                CHILD_ARTICLE_ID,
+                "Unit",
+                "UNIT-1",
+                null,
+                null,
+                null,
+                TAX_ID,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                false,
+                0,
+                null
+        )));
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
+        when(purchaseRepository.save(any(Purchase.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(itemRepository.save(any(Item.class))).thenAnswer(inv -> inv.getArgument(0));
+        final var line = PurchaseLine.create(
+                ARTICLE_ID,
+                1,
+                new BigDecimal("24.00"),
+                BigDecimal.ZERO,
+                TAX_ID,
+                ItemStatus.OPENED,
+                true
+        );
+
+        final var result = purchaseService.create(
+                LocalDateTime.now(), null, null, "PO-BOX-001", "PC-BOX-001",
+                PROVIDER_ID, LOCATION_ID, false, List.of(line)
+        );
+
+        assertThat(result.totalCost()).isEqualByComparingTo(new BigDecimal("24.00"));
+
+        final var itemCaptor = ArgumentCaptor.forClass(Item.class);
+        verify(itemRepository, times(3)).save(itemCaptor.capture());
+        final List<Item> savedItems = itemCaptor.getAllValues();
+        final Item parentItem = savedItems.get(0);
+        assertThat(parentItem.articleId()).isEqualTo(ARTICLE_ID);
+        assertThat(parentItem.itemStatus()).isEqualTo(ItemStatus.OPENED);
+        assertThat(parentItem.hasChildren()).isTrue();
+        assertThat(savedItems.subList(1, 3))
+                .extracting(Item::articleId)
+                .containsExactly(CHILD_ARTICLE_ID, CHILD_ARTICLE_ID);
+        assertThat(savedItems.subList(1, 3))
+                .extracting(Item::cost)
+                .containsExactly(new BigDecimal("12.00"), new BigDecimal("12.00"));
+        assertThat(savedItems.subList(1, 3))
+                .extracting(Item::parentItemId)
+                .containsOnly(parentItem.id());
+        assertThat(savedItems)
+                .extracting(Item::originPurchaseId)
+                .containsOnly(result.id());
+    }
+
+    @Test
+    void shouldRejectChildAwareStockWhenArticleCannotHaveChildren() {
+        mockValidProviderAndLocation();
+        mockSimpleArticleAndTax();
+        final var line = PurchaseLine.create(
+                ARTICLE_ID,
+                1,
+                BigDecimal.TEN,
+                BigDecimal.ZERO,
+                TAX_ID,
+                ItemStatus.OPENED,
+                true
+        );
+
+        assertThatThrownBy(() -> purchaseService.create(
+                LocalDateTime.now(), null, null, "PO-ERR", "PC-ERR",
+                PROVIDER_ID, LOCATION_ID, false, List.of(line)
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot have children");
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenProviderDoesNotExist() {
+        when(providerRepository.findById(PROVIDER_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> purchaseService.create(
+                LocalDateTime.now(), null, null, "PO-001", "PC-001",
+                PROVIDER_ID, LOCATION_ID, false, List.of()
+        ))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining(PROVIDER_ID.toString());
     }
 
     @Test
@@ -92,10 +241,10 @@ class PurchaseServiceTest {
     }
 
     @Test
-    void shouldFindAllPurchasesSortedByCreatedOnDescending() {
+    void shouldReturnRepositoryOrderFromFindAll() {
         final var older = Purchase.create(LocalDateTime.of(2026, 1, 1, 10, 0), null, null, "PO-OLD", "PC-OLD", PROVIDER_ID, LOCATION_ID, false, List.of());
         final var newer = Purchase.create(LocalDateTime.of(2026, 6, 1, 10, 0), null, null, "PO-NEW", "PC-NEW", PROVIDER_ID, LOCATION_ID, false, List.of());
-        when(purchaseRepository.findAll()).thenReturn(List.of(older, newer));
+        when(purchaseRepository.findAll()).thenReturn(List.of(newer, older));
 
         final var result = purchaseService.findAll();
 
@@ -104,6 +253,7 @@ class PurchaseServiceTest {
 
     @Test
     void shouldUpdatePurchase() {
+        mockValidProviderAndLocation();
         final var id = UUID.randomUUID();
         final var createdOn = LocalDateTime.now();
         final var existing = new Purchase(id, createdOn, null, PurchaseState.NEW, "PO-001", "PC-001", PROVIDER_ID, LOCATION_ID, false, List.of(), BigDecimal.ZERO);
@@ -120,6 +270,8 @@ class PurchaseServiceTest {
 
     @Test
     void shouldRecalculateTotalCostOnUpdate() {
+        mockValidProviderAndLocation();
+        mockSimpleArticleAndTax();
         final var id = UUID.randomUUID();
         final var existing = new Purchase(id, LocalDateTime.now(), null, PurchaseState.NEW, "PO-001", "PC-001", PROVIDER_ID, LOCATION_ID, false, List.of(), BigDecimal.ZERO);
         when(purchaseRepository.findById(id)).thenReturn(Optional.of(existing));
@@ -128,7 +280,7 @@ class PurchaseServiceTest {
 
         final var result = purchaseService.update(id, null, null, null, "PO-001", "PC-001", PROVIDER_ID, LOCATION_ID, false, List.of(line));
 
-        assertThat(result.totalCost()).isEqualByComparingTo(new BigDecimal("200"));
+        assertThat(result.totalCost()).isEqualByComparingTo(new BigDecimal("200.00"));
     }
 
     @Test
@@ -141,13 +293,14 @@ class PurchaseServiceTest {
     }
 
     @Test
-    void shouldDeletePurchase() {
+    void shouldDeletePurchaseAndGeneratedInventoryItems() {
         final var id = UUID.randomUUID();
         final var purchase = new Purchase(id, LocalDateTime.now(), null, PurchaseState.NEW, "PO-001", "PC-001", PROVIDER_ID, LOCATION_ID, false, List.of(), BigDecimal.ZERO);
         when(purchaseRepository.findById(id)).thenReturn(Optional.of(purchase));
 
         purchaseService.delete(id);
 
+        verify(itemRepository).deleteAllByOriginPurchaseId(id);
         verify(purchaseRepository).deleteById(id);
     }
 
@@ -158,5 +311,28 @@ class PurchaseServiceTest {
 
         assertThatThrownBy(() -> purchaseService.delete(id))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    private void mockValidProviderAndLocation() {
+        when(providerRepository.findById(PROVIDER_ID)).thenReturn(Optional.of(Provider.create("Acme", "B111", null, null, null, false)));
+        when(locationRepository.findById(LOCATION_ID)).thenReturn(Optional.of(Location.create("Warehouse", null)));
+    }
+
+    private void mockSimpleArticleAndTax() {
+        when(articleRepository.findById(ARTICLE_ID)).thenReturn(Optional.of(new Article(
+                ARTICLE_ID,
+                "Widget",
+                "WDG",
+                null,
+                null,
+                null,
+                TAX_ID,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                false,
+                0,
+                null
+        )));
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
     }
 }

@@ -1,27 +1,25 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.domain;
 
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemStatus;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for the PurchaseLine domain model.
- * A purchase line represents one row of a delivery note: an article reference,
- * the quantity purchased, the unit buy price, the profit margin percentage,
- * and the applicable tax. The retail price is derived from base + margin.
  */
 class PurchaseLineTest {
 
+    private static final int VALID_QUANTITY = 2;
     private static final BigDecimal VALID_BUY_PRICE = new BigDecimal("10.00");
     private static final BigDecimal VALID_PROFIT_MARGIN = new BigDecimal("25.0000");
-    private static final int VALID_QUANTITY = 5;
-
-    // --- Factory method ---
 
     @Test
     void shouldCreatePurchaseLineWithGeneratedId() {
@@ -36,9 +34,25 @@ class PurchaseLineTest {
         assertEquals(articleId, line.articleId());
         assertEquals(taxId, line.taxId());
         assertEquals(VALID_QUANTITY, line.quantity());
+        assertEquals(ItemStatus.AVAILABLE, line.itemStatus());
+        assertFalse(line.hasChildren());
     }
 
-    // --- Price scaling ---
+    @Test
+    void shouldAllowExplicitInventoryFlags() {
+        final PurchaseLine line = PurchaseLine.create(
+                UUID.randomUUID(),
+                1,
+                new BigDecimal("16.00"),
+                BigDecimal.ZERO,
+                UUID.randomUUID(),
+                ItemStatus.OPENED,
+                true
+        );
+
+        assertEquals(ItemStatus.OPENED, line.itemStatus());
+        assertTrue(line.hasChildren());
+    }
 
     @Test
     void shouldScaleBuyPriceToTwoDecimalPlaces() {
@@ -49,8 +63,6 @@ class PurchaseLineTest {
 
         assertEquals(new BigDecimal("10.13"), line.buyPrice());
     }
-
-    // --- Profit margin ---
 
     @Test
     void shouldScaleProfitMarginToFourDecimalPlaces() {
@@ -72,8 +84,6 @@ class PurchaseLineTest {
         assertEquals(new BigDecimal("0.0000"), line.profitMargin());
     }
 
-    // --- Line total calculation ---
-
     @Test
     void shouldCalculateLineTotalFromQuantityAndBuyPrice() {
         final PurchaseLine line = PurchaseLine.create(
@@ -83,8 +93,6 @@ class PurchaseLineTest {
 
         assertEquals(new BigDecimal("30.00"), line.lineTotal());
     }
-
-    // --- Invariant enforcement ---
 
     @Test
     void shouldRejectNullArticleId() {

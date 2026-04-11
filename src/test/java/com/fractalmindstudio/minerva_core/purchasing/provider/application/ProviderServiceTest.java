@@ -65,10 +65,10 @@ class ProviderServiceTest {
     }
 
     @Test
-    void shouldFindAllProvidersSortedByBusinessName() {
-        final var zeta = Provider.create("Zeta Inc", "Z111", null, null, null, false);
+    void shouldReturnRepositoryOrderFromFindAll() {
         final var alpha = Provider.create("Alpha LLC", "A111", null, null, null, false);
-        when(providerRepository.findAll()).thenReturn(List.of(zeta, alpha));
+        final var zeta = Provider.create("Zeta Inc", "Z111", null, null, null, false);
+        when(providerRepository.findAll()).thenReturn(List.of(alpha, zeta));
 
         final var result = providerService.findAll();
 

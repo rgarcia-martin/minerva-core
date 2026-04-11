@@ -12,17 +12,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests for the Item domain model.
- * An item represents a single physical unit of stock generated from a
- * purchase delivery note. It tracks its origin (provider, purchase line),
- * its location, applicable taxes, and its lifecycle status.
- */
 class ItemTest {
 
     private static final BigDecimal VALID_COST = new BigDecimal("99.99");
-
-    // --- Factory method ---
 
     @Test
     void shouldCreateItemWithGeneratedId() {
@@ -42,8 +34,6 @@ class ItemTest {
         assertEquals(locationId, item.locationId());
         assertEquals(taxId, item.buyTaxId());
     }
-
-    // --- Default status ---
 
     @Test
     void shouldDefaultStatusToAvailableWhenNull() {
@@ -65,8 +55,6 @@ class ItemTest {
         assertEquals(ItemStatus.OPENED, item.itemStatus());
     }
 
-    // --- Cost scaling ---
-
     @Test
     void shouldScaleCostToTwoDecimalPlaces() {
         final Item item = Item.create(
@@ -76,8 +64,6 @@ class ItemTest {
 
         assertEquals(new BigDecimal("100.00"), item.cost());
     }
-
-    // --- Parent-child (package) relationship ---
 
     @Test
     void shouldCreateParentItemWithOpenedStatus() {
@@ -104,8 +90,6 @@ class ItemTest {
         assertFalse(child.hasChildren());
     }
 
-    // --- Status transitions ---
-
     @Test
     void shouldMarkItemAsSold() {
         final Item item = Item.create(
@@ -131,8 +115,6 @@ class ItemTest {
         assertEquals(ItemStatus.AVAILABLE, returned.itemStatus());
     }
 
-    // --- Provider origin tracking ---
-
     @Test
     void shouldTrackProviderOrigin() {
         final UUID providerId = UUID.randomUUID();
@@ -143,6 +125,19 @@ class ItemTest {
         );
 
         assertEquals(providerId, item.providerId());
+    }
+
+
+    @Test
+    void shouldTrackOriginPurchase() {
+        final UUID purchaseId = UUID.randomUUID();
+
+        final Item item = Item.create(
+                UUID.randomUUID(), null, null, false, VALID_COST,
+                UUID.randomUUID(), null, UUID.randomUUID(), UUID.randomUUID(), purchaseId
+        );
+
+        assertEquals(purchaseId, item.originPurchaseId());
     }
 
     @Test
@@ -156,8 +151,6 @@ class ItemTest {
 
         assertEquals(locationId, item.locationId());
     }
-
-    // --- Invariant enforcement ---
 
     @Test
     void shouldRejectNullArticleId() {
@@ -180,6 +173,23 @@ class ItemTest {
         assertThrows(NullPointerException.class, () -> Item.create(
                 UUID.randomUUID(), null, null, false, null,
                 UUID.randomUUID(), null, UUID.randomUUID(), UUID.randomUUID()
+        ));
+    }
+
+    @Test
+    void shouldRejectSelfParentReference() {
+        final UUID id = UUID.randomUUID();
+        assertThrows(IllegalArgumentException.class, () -> new Item(
+                id, UUID.randomUUID(), ItemStatus.AVAILABLE, id, false,
+                VALID_COST, null, null, null, null, null
+        ));
+    }
+
+    @Test
+    void shouldRejectItemWithChildrenAndParent() {
+        assertThrows(IllegalArgumentException.class, () -> Item.create(
+                UUID.randomUUID(), ItemStatus.OPENED, UUID.randomUUID(), true,
+                VALID_COST, null, null, null, null
         ));
     }
 

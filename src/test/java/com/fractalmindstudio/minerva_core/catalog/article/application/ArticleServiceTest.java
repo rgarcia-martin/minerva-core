@@ -2,6 +2,8 @@ package com.fractalmindstudio.minerva_core.catalog.article.application;
 
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
+import com.fractalmindstudio.minerva_core.catalog.tax.domain.Tax;
+import com.fractalmindstudio.minerva_core.catalog.tax.domain.TaxRepository;
 import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,21 +31,26 @@ class ArticleServiceTest {
     @Mock
     private ArticleRepository articleRepository;
 
+    @Mock
+    private TaxRepository taxRepository;
+
     @InjectMocks
     private ArticleService articleService;
 
     @Test
     void shouldCreateArticle() {
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
         when(articleRepository.save(any(Article.class))).thenAnswer(inv -> inv.getArgument(0));
 
         final var result = articleService.create(
-                "Widget", "WDG-001", "123", null, "desc",
+                "Widget", "WDG-001", null, null, "desc",
                 TAX_ID, new BigDecimal("10"), new BigDecimal("15"), false, 0, null
         );
 
         assertThat(result.name()).isEqualTo("Widget");
         assertThat(result.code()).isEqualTo("WDG-001");
         assertThat(result.id()).isNotNull();
+        assertThat(result.barcode()).isNull();
 
         final var captor = ArgumentCaptor.forClass(Article.class);
         verify(articleRepository).save(captor.capture());
@@ -51,8 +58,53 @@ class ArticleServiceTest {
     }
 
     @Test
+    void shouldValidateTaxAndChildArticleOnCreate() {
+        final UUID childArticleId = UUID.randomUUID();
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
+        when(articleRepository.findById(childArticleId)).thenReturn(Optional.of(Article.create(
+                "Unit", "U-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null
+        )));
+        when(articleRepository.save(any(Article.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        final var result = articleService.create(
+                "Pack", "P-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, true, 2, childArticleId
+        );
+
+        assertThat(result.childArticleId()).isEqualTo(childArticleId);
+        assertThat(result.canHaveChildren()).isTrue();
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenReferencedTaxDoesNotExist() {
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> articleService.create(
+                "Widget", "WDG-001", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null
+        ))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("tax");
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenReferencedChildArticleDoesNotExist() {
+        final UUID childArticleId = UUID.randomUUID();
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
+        when(articleRepository.findById(childArticleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> articleService.create(
+                "Pack", "P-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, true, 2, childArticleId
+        ))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining(childArticleId.toString());
+    }
+
+    @Test
     void shouldGetArticleById() {
-        final var article = Article.create("Widget", "WDG", "123", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        final var article = Article.create("Widget", "WDG", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
         when(articleRepository.findById(article.id())).thenReturn(Optional.of(article));
 
         final var result = articleService.getById(article.id());
@@ -71,25 +123,25 @@ class ArticleServiceTest {
     }
 
     @Test
-    void shouldFindAllArticlesSortedByNameThenCode() {
-        final var a2 = Article.create("Alpha", "B-code", "111", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
-        final var a1 = Article.create("Alpha", "A-code", "222", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
-        final var b = Article.create("Beta", "C-code", "333", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
-        when(articleRepository.findAll()).thenReturn(List.of(a2, b, a1));
+    void shouldReturnRepositoryOrderFromFindAll() {
+        final var a1 = Article.create("Alpha", "A-code", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        final var a2 = Article.create("Alpha", "B-code", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        when(articleRepository.findAll()).thenReturn(List.of(a1, a2));
 
         final var result = articleService.findAll();
 
-        assertThat(result).extracting(Article::code).containsExactly("A-code", "B-code", "C-code");
+        assertThat(result).extracting(Article::code).containsExactly("A-code", "B-code");
     }
 
     @Test
     void shouldUpdateArticle() {
         final var id = UUID.randomUUID();
-        final var existing = new Article(id, "Old", "OLD", "000", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        final var existing = new Article(id, "Old", "OLD", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
         when(articleRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
         when(articleRepository.save(any(Article.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        final var result = articleService.update(id, "New", "NEW", "999", null, "new desc", TAX_ID, new BigDecimal("20"), new BigDecimal("30"), false, 0, null);
+        final var result = articleService.update(id, "New", "NEW", null, null, "new desc", TAX_ID, new BigDecimal("20"), new BigDecimal("30"), false, 0, null);
 
         assertThat(result.id()).isEqualTo(id);
         assertThat(result.name()).isEqualTo("New");
@@ -101,14 +153,14 @@ class ArticleServiceTest {
         final var id = UUID.randomUUID();
         when(articleRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> articleService.update(id, "N", "C", "B", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null))
+        assertThatThrownBy(() -> articleService.update(id, "N", "C", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null))
                 .isInstanceOf(NotFoundException.class);
     }
 
     @Test
     void shouldDeleteArticle() {
         final var id = UUID.randomUUID();
-        final var article = new Article(id, "Widget", "WDG", "123", null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        final var article = new Article(id, "Widget", "WDG", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
         when(articleRepository.findById(id)).thenReturn(Optional.of(article));
 
         articleService.delete(id);
