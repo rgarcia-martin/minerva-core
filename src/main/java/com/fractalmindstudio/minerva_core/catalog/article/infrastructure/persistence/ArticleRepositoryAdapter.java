@@ -40,6 +40,12 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
     }
 
     @Override
+    public List<Article> findByParentArticleId(final UUID parentArticleId) {
+        return springDataArticleRepository.findByParentArticle_Id(UuidMapper.toString(parentArticleId))
+                .stream().map(this::toDomain).toList();
+    }
+
+    @Override
     public void deleteById(final UUID id) {
         springDataArticleRepository.deleteById(UuidMapper.toString(id));
     }

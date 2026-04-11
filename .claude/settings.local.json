@@ -10,7 +10,19 @@
       "Bash(./mvnw dependency:tree -Dscope=test)",
       "Bash(jar tf:*)",
       "Bash(./mvnw package:*)",
-      "Bash(./mvnw spring-boot:run)"
+      "Bash(./mvnw spring-boot:run)",
+      "Bash(./mvnw spring-boot:run -q)",
+      "Bash(echo \"Spring Boot starting in background \\(PID: $!\\)\")",
+      "Bash(pkill -f \"spring-boot:run\")",
+      "Bash(pkill -9 -f \"spring-boot\")",
+      "Bash(pkill -9 -f \"minerva\")",
+      "Bash(taskkill //F //IM java.exe)",
+      "Bash(echo \"PID=$!\")",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(exit 0)",
+      "Bash(exit 1)",
+      "Bash(tee /tmp/test-output.txt)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

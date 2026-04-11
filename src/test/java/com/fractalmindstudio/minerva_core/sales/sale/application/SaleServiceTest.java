@@ -1,5 +1,8 @@
 package com.fractalmindstudio.minerva_core.sales.sale.application;
 
+import com.fractalmindstudio.minerva_core.inventory.item.domain.Item;
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemRepository;
+import com.fractalmindstudio.minerva_core.inventory.item.domain.ItemStatus;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.Sale;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.SaleLine;
 import com.fractalmindstudio.minerva_core.sales.sale.domain.SaleRepository;
@@ -35,6 +38,9 @@ class SaleServiceTest {
     @Mock
     private SaleRepository saleRepository;
 
+    @Mock
+    private ItemRepository itemRepository;
+
     @InjectMocks
     private SaleService saleService;
 
@@ -42,7 +48,8 @@ class SaleServiceTest {
     void shouldCreateSale() {
         when(saleRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
         final var line = SaleLine.createForItem(ITEM_ID, new BigDecimal("25"), TAX_ID);
-
+        final var item = Item.create(ITEM_ID, ItemStatus.AVAILABLE, null, false, BigDecimal.valueOf(10), null, null, null, null);
+        when(itemRepository.findById(any())).thenReturn(Optional.of(item));
         final var result = saleService.create("SALE-001", EMPLOYEE_ID, null, PAYMENT_METHOD_ID, List.of(line));
 
         assertThat(result.code()).isEqualTo("SALE-001");

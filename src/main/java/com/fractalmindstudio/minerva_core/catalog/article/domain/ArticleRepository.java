@@ -12,5 +12,7 @@ public interface ArticleRepository {
 
     List<Article> findAll();
 
+    List<Article> findByParentArticleId(UUID parentArticleId);
+
     void deleteById(UUID id);
 }
