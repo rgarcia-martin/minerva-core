@@ -22,7 +22,8 @@
       "Bash(exit 0)",
       "Bash(exit 1)",
       "Bash(tee /tmp/test-output.txt)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }
