@@ -34,9 +34,6 @@ public record Item(
         if (parentItemId != null && id.equals(parentItemId)) {
             throw new IllegalArgumentException(FIELD_PARENT_ITEM_ID + " must not reference the item itself");
         }
-        if (hasChildren && parentItemId != null) {
-            throw new IllegalArgumentException("item with children must not reference a parent item");
-        }
     }
 
     public static Item create(

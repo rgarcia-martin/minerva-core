@@ -1,6 +1,7 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.application;
 
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
+import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleChild;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
 import com.fractalmindstudio.minerva_core.catalog.tax.domain.Tax;
 import com.fractalmindstudio.minerva_core.catalog.tax.domain.TaxRepository;
@@ -118,44 +119,20 @@ class PurchaseServiceTest {
     void shouldCreateChildItemsWhenPurchaseRegistersOpenedPackage() {
         mockValidProviderAndLocation();
         when(articleRepository.findById(ARTICLE_ID)).thenReturn(Optional.of(new Article(
-                ARTICLE_ID,
-                "Pack",
-                "PACK-1",
-                null,
-                null,
-                null,
-                TAX_ID,
-                BigDecimal.ONE,
-                BigDecimal.TEN,
-                true,
-                2,
-                CHILD_ARTICLE_ID
+                ARTICLE_ID, "Pack", "PACK-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN,
+                List.of(new ArticleChild(CHILD_ARTICLE_ID, 2))
         )));
         when(articleRepository.findById(CHILD_ARTICLE_ID)).thenReturn(Optional.of(new Article(
-                CHILD_ARTICLE_ID,
-                "Unit",
-                "UNIT-1",
-                null,
-                null,
-                null,
-                TAX_ID,
-                BigDecimal.ONE,
-                BigDecimal.TEN,
-                false,
-                0,
-                null
+                CHILD_ARTICLE_ID, "Unit", "UNIT-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, List.of()
         )));
         when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
         when(purchaseRepository.save(any(Purchase.class))).thenAnswer(inv -> inv.getArgument(0));
         when(itemRepository.save(any(Item.class))).thenAnswer(inv -> inv.getArgument(0));
         final var line = PurchaseLine.create(
-                ARTICLE_ID,
-                1,
-                new BigDecimal("24.00"),
-                BigDecimal.ZERO,
-                TAX_ID,
-                ItemStatus.OPENED,
-                true
+                ARTICLE_ID, 1, new BigDecimal("24.00"), BigDecimal.ZERO, TAX_ID,
+                ItemStatus.OPENED, true
         );
 
         final var result = purchaseService.create(
@@ -187,17 +164,131 @@ class PurchaseServiceTest {
     }
 
     @Test
+    void shouldCreateGrandchildItemsRecursively() {
+        // A has children [B x 2], B has children [C x 3]
+        // Purchase 1 unit of A as OPENED → 1 parent (A) + 2 children (B) + 6 grandchildren (C) = 9 items
+        final UUID articleA = UUID.randomUUID();
+        final UUID articleB = UUID.randomUUID();
+        final UUID articleC = UUID.randomUUID();
+
+        mockValidProviderAndLocation();
+        when(articleRepository.findById(articleA)).thenReturn(Optional.of(new Article(
+                articleA, "Master Box", "MBOX-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN,
+                List.of(new ArticleChild(articleB, 2))
+        )));
+        when(articleRepository.findById(articleB)).thenReturn(Optional.of(new Article(
+                articleB, "Sub Box", "SBOX-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN,
+                List.of(new ArticleChild(articleC, 3))
+        )));
+        when(articleRepository.findById(articleC)).thenReturn(Optional.of(new Article(
+                articleC, "Unit", "UNIT-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, List.of()
+        )));
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
+        when(purchaseRepository.save(any(Purchase.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(itemRepository.save(any(Item.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        final var line = PurchaseLine.create(
+                articleA, 1, new BigDecimal("24.00"), BigDecimal.ZERO, TAX_ID,
+                ItemStatus.OPENED, true
+        );
+
+        purchaseService.create(
+                LocalDateTime.now(), null, null, "PO-GRAND", "PC-GRAND",
+                PROVIDER_ID, LOCATION_ID, false, List.of(line)
+        );
+
+        // 1 parent (A) + 2 children (B) + 6 grandchildren (C) = 9 items
+        final var itemCaptor = ArgumentCaptor.forClass(Item.class);
+        verify(itemRepository, times(9)).save(itemCaptor.capture());
+        final List<Item> savedItems = itemCaptor.getAllValues();
+
+        // Parent A: cost 24.00 (always first)
+        assertThat(savedItems.get(0).articleId()).isEqualTo(articleA);
+        assertThat(savedItems.get(0).cost()).isEqualByComparingTo(new BigDecimal("24.00"));
+        assertThat(savedItems.get(0).hasChildren()).isTrue();
+
+        // Children B: 2 items, cost = 24.00 / 2 = 12.00 each, hasChildren = true
+        final List<Item> bItems = savedItems.stream()
+                .filter(i -> i.articleId().equals(articleB)).toList();
+        assertThat(bItems).hasSize(2);
+        assertThat(bItems).extracting(Item::cost)
+                .containsOnly(new BigDecimal("12.00"));
+        assertThat(bItems).extracting(Item::hasChildren)
+                .containsOnly(true);
+
+        // Grandchildren C: 6 items, cost = 12.00 / 3 = 4.00 each, hasChildren = false
+        final List<Item> cItems = savedItems.stream()
+                .filter(i -> i.articleId().equals(articleC)).toList();
+        assertThat(cItems).hasSize(6);
+        assertThat(cItems).extracting(Item::cost)
+                .containsOnly(new BigDecimal("4.00"));
+        assertThat(cItems).extracting(Item::hasChildren)
+                .containsOnly(false);
+    }
+
+    @Test
+    void shouldCreateItemsForMultipleChildTypes() {
+        // A has children [B x 2, C x 3]. Cost = 50.00 → each child costs 50/5 = 10.00
+        final UUID articleA = UUID.randomUUID();
+        final UUID articleB = UUID.randomUUID();
+        final UUID articleC = UUID.randomUUID();
+
+        mockValidProviderAndLocation();
+        when(articleRepository.findById(articleA)).thenReturn(Optional.of(new Article(
+                articleA, "Combo", "COMBO-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN,
+                List.of(new ArticleChild(articleB, 2), new ArticleChild(articleC, 3))
+        )));
+        when(articleRepository.findById(articleB)).thenReturn(Optional.of(new Article(
+                articleB, "Product B", "PB-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, List.of()
+        )));
+        when(articleRepository.findById(articleC)).thenReturn(Optional.of(new Article(
+                articleC, "Product C", "PC-1", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, List.of()
+        )));
+        when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
+        when(purchaseRepository.save(any(Purchase.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(itemRepository.save(any(Item.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        final var line = PurchaseLine.create(
+                articleA, 1, new BigDecimal("50.00"), BigDecimal.ZERO, TAX_ID,
+                ItemStatus.OPENED, true
+        );
+
+        purchaseService.create(
+                LocalDateTime.now(), null, null, "PO-MULTI", "PC-MULTI",
+                PROVIDER_ID, LOCATION_ID, false, List.of(line)
+        );
+
+        // 1 parent + 2 (B) + 3 (C) = 6 items
+        final var itemCaptor = ArgumentCaptor.forClass(Item.class);
+        verify(itemRepository, times(6)).save(itemCaptor.capture());
+        final List<Item> savedItems = itemCaptor.getAllValues();
+
+        // Parent: cost 50.00
+        assertThat(savedItems.get(0).cost()).isEqualByComparingTo(new BigDecimal("50.00"));
+
+        // All 5 children cost 10.00 each (50/5)
+        final List<Item> childItems = savedItems.subList(1, 6);
+        assertThat(childItems).extracting(Item::cost).containsOnly(new BigDecimal("10.00"));
+
+        // 2 items of article B
+        assertThat(childItems.stream().filter(i -> i.articleId().equals(articleB)).count()).isEqualTo(2);
+        // 3 items of article C
+        assertThat(childItems.stream().filter(i -> i.articleId().equals(articleC)).count()).isEqualTo(3);
+    }
+
+    @Test
     void shouldRejectChildAwareStockWhenArticleCannotHaveChildren() {
         mockValidProviderAndLocation();
         mockSimpleArticleAndTax();
         final var line = PurchaseLine.create(
-                ARTICLE_ID,
-                1,
-                BigDecimal.TEN,
-                BigDecimal.ZERO,
-                TAX_ID,
-                ItemStatus.OPENED,
-                true
+                ARTICLE_ID, 1, BigDecimal.TEN, BigDecimal.ZERO, TAX_ID,
+                ItemStatus.OPENED, true
         );
 
         assertThatThrownBy(() -> purchaseService.create(
@@ -320,18 +411,8 @@ class PurchaseServiceTest {
 
     private void mockSimpleArticleAndTax() {
         when(articleRepository.findById(ARTICLE_ID)).thenReturn(Optional.of(new Article(
-                ARTICLE_ID,
-                "Widget",
-                "WDG",
-                null,
-                null,
-                null,
-                TAX_ID,
-                BigDecimal.ONE,
-                BigDecimal.TEN,
-                false,
-                0,
-                null
+                ARTICLE_ID, "Widget", "WDG", null, null, null,
+                TAX_ID, BigDecimal.ONE, BigDecimal.TEN, List.of()
         )));
         when(taxRepository.findById(TAX_ID)).thenReturn(Optional.of(Tax.create("VAT", new BigDecimal("21"), BigDecimal.ZERO)));
     }

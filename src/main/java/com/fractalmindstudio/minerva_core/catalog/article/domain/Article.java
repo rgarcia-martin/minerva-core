@@ -3,6 +3,7 @@ package com.fractalmindstudio.minerva_core.catalog.article.domain;
 import com.fractalmindstudio.minerva_core.shared.domain.DomainRules;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public record Article(
@@ -15,9 +16,7 @@ public record Article(
         UUID taxId,
         BigDecimal basePrice,
         BigDecimal retailPrice,
-        boolean canHaveChildren,
-        int numberOfChildren,
-        UUID childArticleId
+        List<ArticleChild> children
 ) {
 
     public static final String FIELD_ID = "article.id";
@@ -26,8 +25,7 @@ public record Article(
     public static final String FIELD_TAX_ID = "article.taxId";
     public static final String FIELD_BASE_PRICE = "article.basePrice";
     public static final String FIELD_RETAIL_PRICE = "article.retailPrice";
-    public static final String FIELD_NUMBER_OF_CHILDREN = "article.numberOfChildren";
-    public static final String FIELD_CHILD_ARTICLE_ID = "article.childArticleId";
+    public static final String FIELD_CHILDREN = "article.children";
 
     public Article {
         DomainRules.requireNonNull(id, FIELD_ID);
@@ -41,24 +39,25 @@ public record Article(
         DomainRules.requirePositiveOrZero(retailPrice, FIELD_RETAIL_PRICE);
         basePrice = DomainRules.scaleMoney(basePrice);
         retailPrice = DomainRules.scaleMoney(retailPrice);
-        DomainRules.requirePositiveOrZero(numberOfChildren, FIELD_NUMBER_OF_CHILDREN);
 
-        if (canHaveChildren) {
-            if (numberOfChildren == 0) {
-                throw new IllegalArgumentException(FIELD_NUMBER_OF_CHILDREN + " must be greater than zero when article can have children");
-            }
-            DomainRules.requireNonNull(childArticleId, FIELD_CHILD_ARTICLE_ID);
-            if (id.equals(childArticleId)) {
-                throw new IllegalArgumentException(FIELD_CHILD_ARTICLE_ID + " must not reference the article itself");
-            }
-        } else {
-            if (numberOfChildren != 0) {
-                throw new IllegalArgumentException(FIELD_NUMBER_OF_CHILDREN + " must be zero when article cannot have children");
-            }
-            if (childArticleId != null) {
-                throw new IllegalArgumentException(FIELD_CHILD_ARTICLE_ID + " must be null when article cannot have children");
-            }
+        children = children == null ? List.of() : List.copyOf(children);
+
+        if (children.stream().anyMatch(c -> id.equals(c.childArticleId()))) {
+            throw new IllegalArgumentException(FIELD_CHILDREN + " must not reference the article itself");
         }
+
+        final long distinctChildIds = children.stream()
+                .map(ArticleChild::childArticleId)
+                .distinct()
+                .count();
+        if (distinctChildIds != children.size()) {
+            throw new IllegalArgumentException(FIELD_CHILDREN + " must not contain duplicate child article references");
+        }
+    }
+
+    /** Derived convenience — true when this article has at least one child definition. */
+    public boolean canHaveChildren() {
+        return !children.isEmpty();
     }
 
     public static Article create(
@@ -70,9 +69,7 @@ public record Article(
             final UUID taxId,
             final BigDecimal basePrice,
             final BigDecimal retailPrice,
-            final boolean canHaveChildren,
-            final int numberOfChildren,
-            final UUID childArticleId
+            final List<ArticleChild> children
     ) {
         return new Article(
                 UUID.randomUUID(),
@@ -84,9 +81,7 @@ public record Article(
                 taxId,
                 basePrice,
                 retailPrice,
-                canHaveChildren,
-                numberOfChildren,
-                childArticleId
+                children
         );
     }
 }

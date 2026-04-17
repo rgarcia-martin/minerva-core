@@ -2,11 +2,12 @@ package com.fractalmindstudio.minerva_core.catalog.article.interfaces.rest;
 
 import com.fractalmindstudio.minerva_core.catalog.article.application.ArticleService;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
+import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleChild;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Positive;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -50,9 +51,7 @@ public class ArticleController {
                 request.taxId(),
                 request.basePrice(),
                 request.retailPrice(),
-                Boolean.TRUE.equals(request.canHaveChildren()),
-                request.numberOfChildren() == null ? 0 : request.numberOfChildren(),
-                request.childArticleId()
+                toChildDomains(request.children())
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(article));
     }
@@ -82,9 +81,7 @@ public class ArticleController {
                 request.taxId(),
                 request.basePrice(),
                 request.retailPrice(),
-                Boolean.TRUE.equals(request.canHaveChildren()),
-                request.numberOfChildren() == null ? 0 : request.numberOfChildren(),
-                request.childArticleId()
+                toChildDomains(request.children())
         );
         return toResponse(article);
     }
@@ -93,6 +90,15 @@ public class ArticleController {
     public ResponseEntity<Void> delete(@PathVariable final UUID articleId) {
         articleService.delete(articleId);
         return ResponseEntity.noContent().build();
+    }
+
+    private List<ArticleChild> toChildDomains(final List<ChildEntry> children) {
+        if (children == null) {
+            return List.of();
+        }
+        return children.stream()
+                .map(c -> new ArticleChild(c.childArticleId(), c.quantity()))
+                .toList();
     }
 
     private ArticleResponse toResponse(final Article article) {
@@ -107,8 +113,9 @@ public class ArticleController {
                 article.basePrice(),
                 article.retailPrice(),
                 article.canHaveChildren(),
-                article.numberOfChildren(),
-                article.childArticleId()
+                article.children().stream()
+                        .map(c -> new ChildResponse(c.childArticleId(), c.quantity()))
+                        .toList()
         );
     }
 
@@ -121,9 +128,13 @@ public class ArticleController {
             @NotNull UUID taxId,
             @NotNull @DecimalMin("0.0") BigDecimal basePrice,
             @NotNull @DecimalMin("0.0") BigDecimal retailPrice,
-            Boolean canHaveChildren,
-            @PositiveOrZero Integer numberOfChildren,
-            UUID childArticleId
+            @Valid List<ChildEntry> children
+    ) {
+    }
+
+    public record ChildEntry(
+            @NotNull UUID childArticleId,
+            @Positive int quantity
     ) {
     }
 
@@ -138,8 +149,13 @@ public class ArticleController {
             BigDecimal basePrice,
             BigDecimal retailPrice,
             boolean canHaveChildren,
-            int numberOfChildren,
-            UUID childArticleId
+            List<ChildResponse> children
+    ) {
+    }
+
+    public record ChildResponse(
+            UUID childArticleId,
+            int quantity
     ) {
     }
 }

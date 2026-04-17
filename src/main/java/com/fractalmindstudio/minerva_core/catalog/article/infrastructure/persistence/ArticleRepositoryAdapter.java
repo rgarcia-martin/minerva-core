@@ -1,6 +1,7 @@
 package com.fractalmindstudio.minerva_core.catalog.article.infrastructure.persistence;
 
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
+import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleChild;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
 import com.fractalmindstudio.minerva_core.catalog.tax.infrastructure.persistence.SpringDataTaxRepository;
 import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
@@ -8,6 +9,7 @@ import com.fractalmindstudio.minerva_core.shared.infrastructure.persistence.Uuid
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,9 +59,22 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
         entity.setTax(resolveReference(springDataTaxRepository, article.taxId(), "tax"));
         entity.setBasePrice(article.basePrice());
         entity.setRetailPrice(article.retailPrice());
-        entity.setCanHaveChildren(article.canHaveChildren());
-        entity.setNumberOfChildren(article.numberOfChildren());
-        entity.setChildArticle(resolveReference(springDataArticleRepository, article.childArticleId(), "article"));
+        entity.setChildren(toChildEntities(article.children()));
+        return entity;
+    }
+
+    private List<ArticleChildEntity> toChildEntities(final List<ArticleChild> children) {
+        if (children == null || children.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(children.stream().map(this::toChildEntity).toList());
+    }
+
+    private ArticleChildEntity toChildEntity(final ArticleChild child) {
+        final ArticleChildEntity entity = new ArticleChildEntity();
+        entity.setId(UUID.randomUUID().toString());
+        entity.setChildArticle(resolveReference(springDataArticleRepository, child.childArticleId(), "article"));
+        entity.setQuantity(child.quantity());
         return entity;
     }
 
@@ -74,10 +89,20 @@ public class ArticleRepositoryAdapter implements ArticleRepository {
                 entity.getTax() != null ? UuidMapper.fromString(entity.getTax().getId()) : null,
                 entity.getBasePrice(),
                 entity.getRetailPrice(),
-                entity.isCanHaveChildren(),
-                entity.getNumberOfChildren(),
-                entity.getChildArticle() != null ? UuidMapper.fromString(entity.getChildArticle().getId()) : null
+                toChildDomains(entity.getChildren())
         );
+    }
+
+    private List<ArticleChild> toChildDomains(final List<ArticleChildEntity> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return List.of();
+        }
+        return entities.stream()
+                .map(ce -> new ArticleChild(
+                        UuidMapper.fromString(ce.getChildArticle().getId()),
+                        ce.getQuantity()
+                ))
+                .toList();
     }
 
     private static <T> T resolveReference(

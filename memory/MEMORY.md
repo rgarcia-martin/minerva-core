@@ -2,3 +2,4 @@
 - [Specification sources](reference_specifications.md) — `requisitos.txt` (Spanish user stories) and `api-tests.sh` (e2e acceptance) are the spec
 - [Project scope and pending work](project_scope.md) — POS back-end; implemented contexts vs pending stories from `requisitos.txt`
 - [Memory location rule](feedback_memory_location.md) — All memories in project `memory/`, never in `~/.claude/` internal dirs
+- [Reusability contract](feedback_reusability.md) — Design for reuse first; if a change touches more than one place, refactor into a shared unit

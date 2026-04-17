@@ -895,12 +895,12 @@ parse_response "$response"
 assert_status "BOX — create pen article (child)" 201 "$STATUS"
 PEN_ARTICLE_ID=$(extract_id "$BODY")
 
-response=$(do_post "$BASE_URL/articles" "{\"name\":\"Box of Pens (20u)\",\"code\":\"BOX-PEN-20\",\"barcode\":\"8400000020001\",\"taxId\":\"$TAX_ID\",\"basePrice\":16.00,\"retailPrice\":30.00,\"canHaveChildren\":true,\"numberOfChildren\":20,\"childArticleId\":\"$PEN_ARTICLE_ID\"}")
+response=$(do_post "$BASE_URL/articles" "{\"name\":\"Box of Pens (20u)\",\"code\":\"BOX-PEN-20\",\"barcode\":\"8400000020001\",\"taxId\":\"$TAX_ID\",\"basePrice\":16.00,\"retailPrice\":30.00,\"children\":[{\"childArticleId\":\"$PEN_ARTICLE_ID\",\"quantity\":20}]}")
 parse_response "$response"
 assert_status "BOX — create box article" 201 "$STATUS"
 assert_contains "BOX — canHaveChildren true" '"canHaveChildren":true' "$BODY"
-assert_contains "BOX — numberOfChildren 20" '"numberOfChildren":20' "$BODY"
-assert_contains "BOX — childArticleId set" "$PEN_ARTICLE_ID" "$BODY"
+assert_contains "BOX — children array present" '"children":[{' "$BODY"
+assert_contains "BOX — childArticleId in children" "$PEN_ARTICLE_ID" "$BODY"
 BOX_ARTICLE_ID=$(extract_id "$BODY")
 
 echo "  --- Step 2: Purchase 1 opened box of pens ---"

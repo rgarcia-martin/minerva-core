@@ -1,6 +1,7 @@
 package com.fractalmindstudio.minerva_core.purchasing.purchase.application;
 
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
+import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleChild;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleRepository;
 import com.fractalmindstudio.minerva_core.catalog.tax.domain.TaxRepository;
 import com.fractalmindstudio.minerva_core.inventory.item.domain.Item;
@@ -31,6 +32,8 @@ public class PurchaseService {
     public static final String LOCATION_RESOURCE_NAME = "location";
     public static final String ARTICLE_RESOURCE_NAME = "article";
     public static final String TAX_RESOURCE_NAME = "tax";
+
+    private static final int MONEY_SCALE = 2;
 
     private final PurchaseRepository purchaseRepository;
     private final ProviderRepository providerRepository;
@@ -141,13 +144,18 @@ public class PurchaseService {
                 ));
 
                 if (line.hasChildren() && purchasedItem.itemStatus() == ItemStatus.OPENED) {
-                    createChildItems(purchasedItem, article, purchase.id(), purchase.providerId(), purchase.locationId(), line.taxId());
+                    createDescendantItems(purchasedItem, article, purchase.id(), purchase.providerId(), purchase.locationId(), line.taxId());
                 }
             }
         }
     }
 
-    private void createChildItems(
+    /**
+     * Recursively traverses the article genealogical tree and creates inventory items
+     * for all descendants. At each level, the parent item's cost is divided equally
+     * among the total child units (sum of all children quantities).
+     */
+    private void createDescendantItems(
             final Item parentItem,
             final Article parentArticle,
             final UUID purchaseId,
@@ -155,25 +163,32 @@ public class PurchaseService {
             final UUID locationId,
             final UUID buyTaxId
     ) {
-        final UUID childArticleId = parentArticle.childArticleId();
-        getArticle(childArticleId);
-        final int numberOfChildren = parentArticle.numberOfChildren();
-        final BigDecimal childCost = parentItem.cost()
-                .divide(BigDecimal.valueOf(numberOfChildren), 2, RoundingMode.HALF_UP);
+        final List<ArticleChild> children = parentArticle.children();
+        final int totalChildUnits = children.stream().mapToInt(ArticleChild::quantity).sum();
+        final BigDecimal costPerUnit = parentItem.cost()
+                .divide(BigDecimal.valueOf(totalChildUnits), MONEY_SCALE, RoundingMode.HALF_UP);
 
-        for (int i = 0; i < numberOfChildren; i++) {
-            itemRepository.save(Item.create(
-                    childArticleId,
-                    ItemStatus.AVAILABLE,
-                    parentItem.id(),
-                    false,
-                    childCost,
-                    buyTaxId,
-                    null,
-                    providerId,
-                    locationId,
-                    purchaseId
-            ));
+        for (final ArticleChild child : children) {
+            final Article childArticle = getArticle(child.childArticleId());
+            for (int i = 0; i < child.quantity(); i++) {
+                final Item childItem = itemRepository.save(Item.create(
+                        child.childArticleId(),
+                        ItemStatus.AVAILABLE,
+                        parentItem.id(),
+                        childArticle.canHaveChildren(),
+                        costPerUnit,
+                        buyTaxId,
+                        null,
+                        providerId,
+                        locationId,
+                        purchaseId
+                ));
+
+                // Recurse into grandchildren if the child article itself has children
+                if (childArticle.canHaveChildren()) {
+                    createDescendantItems(childItem, childArticle, purchaseId, providerId, locationId, buyTaxId);
+                }
+            }
         }
     }
 
@@ -209,11 +224,6 @@ public class PurchaseService {
         if (!article.canHaveChildren()) {
             throw new IllegalArgumentException(
                     "purchase line requests child-aware stock but article " + article.id() + " cannot have children"
-            );
-        }
-        if (article.childArticleId() == null || article.numberOfChildren() <= 0) {
-            throw new IllegalArgumentException(
-                    "article " + article.id() + " is not configured with a valid child article"
             );
         }
     }

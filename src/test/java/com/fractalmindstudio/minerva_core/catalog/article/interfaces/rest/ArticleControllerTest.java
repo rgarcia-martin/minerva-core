@@ -2,6 +2,7 @@ package com.fractalmindstudio.minerva_core.catalog.article.interfaces.rest;
 
 import com.fractalmindstudio.minerva_core.catalog.article.application.ArticleService;
 import com.fractalmindstudio.minerva_core.catalog.article.domain.Article;
+import com.fractalmindstudio.minerva_core.catalog.article.domain.ArticleChild;
 import com.fractalmindstudio.minerva_core.shared.application.NotFoundException;
 import com.fractalmindstudio.minerva_core.shared.interfaces.rest.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,24 +63,21 @@ class ArticleControllerTest {
                     "description": "A widget",
                     "taxId": "%s",
                     "basePrice": 10.00,
-                    "retailPrice": 15.00,
-                    "canHaveChildren": false,
-                    "numberOfChildren": 0,
-                    "childArticleId": null
+                    "retailPrice": 15.00
                 }
                 """.formatted(TAX_ID);
     }
 
     @Test
-    void shouldCreateArticleWithOptionalBarcode() throws Exception {
+    void shouldCreateArticleWithoutChildren() throws Exception {
         final var article = Article.create(
                 "Widget", "WDG-001", null, null, "A widget",
-                TAX_ID, new BigDecimal("10"), new BigDecimal("15"), false, 0, null
+                TAX_ID, new BigDecimal("10"), new BigDecimal("15"), List.of()
         );
         when(articleService.create(
                 eq("Widget"), eq("WDG-001"), isNull(), isNull(), eq("A widget"),
                 eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
-                eq(false), eq(0), isNull()
+                eq(List.of())
         )).thenReturn(article);
 
         mockMvc.perform(post(BASE_PATH)
@@ -88,20 +86,22 @@ class ArticleControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(article.id().toString()))
                 .andExpect(jsonPath("$.name").value("Widget"))
-                ;
+                .andExpect(jsonPath("$.canHaveChildren").value(false))
+                .andExpect(jsonPath("$.children", hasSize(0)));
     }
 
     @Test
-    void shouldCreatePackArticleWithChildArticleId() throws Exception {
+    void shouldCreateArticleWithChildren() throws Exception {
         final UUID childArticleId = UUID.randomUUID();
+        final var children = List.of(new ArticleChild(childArticleId, 3));
         final var article = Article.create(
                 "Pack", "PACK-001", null, null, null,
-                TAX_ID, new BigDecimal("10"), new BigDecimal("15"), true, 3, childArticleId
+                TAX_ID, new BigDecimal("10"), new BigDecimal("15"), children
         );
         when(articleService.create(
                 eq("Pack"), eq("PACK-001"), isNull(), isNull(), isNull(),
                 eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
-                eq(true), eq(3), eq(childArticleId)
+                eq(children)
         )).thenReturn(article);
 
         mockMvc.perform(post(BASE_PATH)
@@ -113,19 +113,22 @@ class ArticleControllerTest {
                                     "taxId": "%s",
                                     "basePrice": 10,
                                     "retailPrice": 15,
-                                    "canHaveChildren": true,
-                                    "numberOfChildren": 3,
-                                    "childArticleId": "%s"
+                                    "children": [
+                                        {"childArticleId": "%s", "quantity": 3}
+                                    ]
                                 }
                                 """.formatted(TAX_ID, childArticleId)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.childArticleId").value(childArticleId.toString()));
+                .andExpect(jsonPath("$.canHaveChildren").value(true))
+                .andExpect(jsonPath("$.children", hasSize(1)))
+                .andExpect(jsonPath("$.children[0].childArticleId").value(childArticleId.toString()))
+                .andExpect(jsonPath("$.children[0].quantity").value(3));
     }
 
     @Test
     void shouldFindAllArticles() throws Exception {
         when(articleService.findAll()).thenReturn(List.of(
-                Article.create("A", "A-1", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null)
+                Article.create("A", "A-1", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, List.of())
         ));
 
         mockMvc.perform(get(BASE_PATH))
@@ -135,7 +138,7 @@ class ArticleControllerTest {
 
     @Test
     void shouldGetArticleById() throws Exception {
-        final var article = Article.create("Widget", "WDG-001", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, false, 0, null);
+        final var article = Article.create("Widget", "WDG-001", null, null, null, TAX_ID, BigDecimal.ONE, BigDecimal.TEN, List.of());
         when(articleService.getById(article.id())).thenReturn(article);
 
         mockMvc.perform(get(BASE_PATH + "/{id}", article.id()))
@@ -147,11 +150,11 @@ class ArticleControllerTest {
     void shouldUpdateArticle() throws Exception {
         final var id = UUID.randomUUID();
         final var updated = new Article(id, "Updated", "UPD-001", null, null, "Updated desc",
-                TAX_ID, new BigDecimal("20"), new BigDecimal("30"), false, 0, null);
+                TAX_ID, new BigDecimal("20"), new BigDecimal("30"), List.of());
         when(articleService.update(
                 eq(id), eq("Updated"), eq("UPD-001"), isNull(), isNull(), eq("Updated desc"),
                 eq(TAX_ID), any(BigDecimal.class), any(BigDecimal.class),
-                eq(false), eq(0), isNull()
+                eq(List.of())
         )).thenReturn(updated);
 
         mockMvc.perform(put(BASE_PATH + "/{id}", id)

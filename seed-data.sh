@@ -214,7 +214,7 @@ ARTICLE_ROWS=(
 )
 for row in "${ARTICLE_ROWS[@]}"; do
     IFS='|' read -r name code barcode desc base retail <<<"$row"
-    payload=$(printf '{"name":"%s","code":"%s","barcode":"%s","description":"%s","taxId":"%s","basePrice":%s,"retailPrice":%s,"canHaveChildren":false}' \
+    payload=$(printf '{"name":"%s","code":"%s","barcode":"%s","description":"%s","taxId":"%s","basePrice":%s,"retailPrice":%s}' \
         "$name" "$code" "$barcode" "$desc" "$DEFAULT_TAX_ID" "$base" "$retail")
     post_or_die "article: $name" "$BASE_URL/articles" "$payload"
     [ -n "$LAST_ID" ] && ARTICLE_IDS+=("$LAST_ID")
@@ -223,7 +223,7 @@ done
 # =============================================================================
 # 4b. PACKAGED ARTICLES (parent / child pairs for box-opening flow)
 # Each pair = a child "unit" article + a parent "box" article that references
-# it via canHaveChildren=true + numberOfChildren + childArticleId.
+# it via the children array: [{"childArticleId":"...", "quantity": N}].
 # =============================================================================
 echo ""
 echo "=== PACKAGED ARTICLES (parent/child) ==="
@@ -242,7 +242,7 @@ for pair in "${PACKAGED_PAIRS[@]}"; do
     IFS='|' read -r c_name c_code c_barcode c_base c_retail _ p_name p_code p_barcode p_base p_retail p_num <<<"$pair"
 
     # 1) Create the child (unit) article first — must exist before the parent references it.
-    payload=$(printf '{"name":"%s","code":"%s","barcode":"%s","description":"Unidad suelta","taxId":"%s","basePrice":%s,"retailPrice":%s,"canHaveChildren":false}' \
+    payload=$(printf '{"name":"%s","code":"%s","barcode":"%s","description":"Unidad suelta","taxId":"%s","basePrice":%s,"retailPrice":%s}' \
         "$c_name" "$c_code" "$c_barcode" "$DEFAULT_TAX_ID" "$c_base" "$c_retail")
     post_or_die "child article: $c_name" "$BASE_URL/articles" "$payload"
     if [ -z "$LAST_ID" ]; then
@@ -252,8 +252,8 @@ for pair in "${PACKAGED_PAIRS[@]}"; do
     CHILD_ARTICLE_IDS+=("$child_id")
 
     # 2) Create the parent (box) article referencing the child.
-    payload=$(printf '{"name":"%s","code":"%s","barcode":"%s","description":"Caja contenedora","taxId":"%s","basePrice":%s,"retailPrice":%s,"canHaveChildren":true,"numberOfChildren":%s,"childArticleId":"%s"}' \
-        "$p_name" "$p_code" "$p_barcode" "$DEFAULT_TAX_ID" "$p_base" "$p_retail" "$p_num" "$child_id")
+    payload=$(printf '{"name":"%s","code":"%s","barcode":"%s","description":"Caja contenedora","taxId":"%s","basePrice":%s,"retailPrice":%s,"children":[{"childArticleId":"%s","quantity":%s}]}' \
+        "$p_name" "$p_code" "$p_barcode" "$DEFAULT_TAX_ID" "$p_base" "$p_retail" "$child_id" "$p_num")
     post_or_die "parent article: $p_name (x$p_num)" "$BASE_URL/articles" "$payload"
     if [ -n "$LAST_ID" ]; then
         PARENT_ARTICLE_IDS+=("$LAST_ID")
@@ -373,7 +373,7 @@ fi
 # 8b. BOX-OPENING PURCHASES
 # Each purchase buys 1 parent box in OPENED state with hasChildren=true.
 # PurchaseService auto-generates 1 parent item + N child items at
-# parent.cost / numberOfChildren each (HALF_UP, 2dp).
+# parent.cost / totalChildUnits each (HALF_UP, 2dp).
 # =============================================================================
 echo ""
 echo "=== BOX-OPENING PURCHASES ==="

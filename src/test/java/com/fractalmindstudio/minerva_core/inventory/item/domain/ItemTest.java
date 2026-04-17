@@ -186,11 +186,13 @@ class ItemTest {
     }
 
     @Test
-    void shouldRejectItemWithChildrenAndParent() {
-        assertThrows(IllegalArgumentException.class, () -> Item.create(
+    void shouldAllowItemWithChildrenAndParent() {
+        final Item item = Item.create(
                 UUID.randomUUID(), ItemStatus.OPENED, UUID.randomUUID(), true,
                 VALID_COST, null, null, null, null
-        ));
+        );
+        assertTrue(item.hasChildren());
+        assertNotNull(item.parentItemId());
     }
 
     @Test
